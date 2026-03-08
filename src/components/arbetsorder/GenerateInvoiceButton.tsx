@@ -7,9 +7,10 @@ import { FileText, ExternalLink, Loader2 } from "lucide-react";
 interface GenerateInvoiceButtonProps {
   workOrderId: string;
   invoiceId: string | null;
+  quoteIds?: { id: string; invoiceNumber: string }[];
 }
 
-export function GenerateInvoiceButton({ workOrderId, invoiceId }: GenerateInvoiceButtonProps) {
+export function GenerateInvoiceButton({ workOrderId, invoiceId, quoteIds: _quoteIds }: GenerateInvoiceButtonProps) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

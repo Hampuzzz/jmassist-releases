@@ -40,6 +40,7 @@ export const invoices = pgTable("invoices", {
   fortnoxSyncStatus:    text("fortnox_sync_status").notNull().default("not_synced"),
   fortnoxSyncedAt:      timestamp("fortnox_synced_at", { withTimezone: true }),
   fortnoxErrorMsg:      text("fortnox_error_msg"),
+  reviewSmsSentAt:      timestamp("review_sms_sent_at", { withTimezone: true }),
   createdBy:            uuid("created_by").references(() => userProfiles.id, { onDelete: "set null" }),
   createdAt:            timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt:            timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

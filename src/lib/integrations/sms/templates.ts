@@ -109,6 +109,17 @@ export function tireChangeReminderSms(
   return `Hej ${first}! Dags för däckbyte på ${vehicleRegNr}. Boka tid: ring oss eller svara på detta SMS. //${WORKSHOP_NAME}`;
 }
 
+/**
+ * Review request — asks customer to leave a Google review after service.
+ */
+export function reviewRequestSms(
+  customerName: string,
+  reviewUrl: string,
+): string {
+  const first = customerName.split(" ")[0];
+  return `Hej ${first}! Tack för att du valde ${WORKSHOP_NAME}. Vi uppskattar om du lämnar en recension: ${reviewUrl}`;
+}
+
 /** Statuses that should trigger SMS notifications */
 export const SMS_TRIGGER_STATUSES = [
   "ready_for_pickup",
