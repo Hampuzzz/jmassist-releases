@@ -10,6 +10,7 @@ import { InvoiceDetail } from "@/components/faktura/InvoiceDetail";
 import { InvoiceLineEditor } from "@/components/faktura/InvoiceLineEditor";
 import { NotesEditor } from "@/components/faktura/NotesEditor";
 import { SwishQR } from "@/components/faktura/SwishQR";
+import { LogoImage } from "@/components/faktura/LogoImage";
 
 export const dynamic = "force-dynamic";
 
@@ -178,13 +179,7 @@ export default async function InvoiceDetailPage({
         {/* ---------- Header ---------- */}
         <div className="flex justify-between items-start">
           <div className="flex items-start gap-4">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.png"
-              alt={workshopName}
-              className="h-16 w-auto object-contain print-logo"
-              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-            />
+            <LogoImage alt={workshopName} className="h-16 w-auto object-contain print-logo" />
             <div>
             <h2 className="text-2xl font-bold text-workshop-text print-text-black">
               {workshopName}
