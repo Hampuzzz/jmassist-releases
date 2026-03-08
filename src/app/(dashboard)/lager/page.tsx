@@ -3,8 +3,8 @@ import { Plus, AlertTriangle, ShoppingCart } from "lucide-react";
 import { db } from "@/lib/db";
 import { parts } from "@/lib/db/schemas";
 import { eq, desc, ilike } from "drizzle-orm";
-import { formatCurrency } from "@/lib/utils";
 import { Pagination } from "@/components/ui/Pagination";
+import { LagerTable } from "@/components/lager/LagerTable";
 
 export const metadata = { title: "Lager" };
 export const dynamic = "force-dynamic";
@@ -58,7 +58,6 @@ export default async function LagerPage({
   const hasMore = data.length > PAGE_SIZE;
   if (hasMore) data = data.slice(0, PAGE_SIZE);
 
-  // Build searchParams for pagination links
   const paginationParams: Record<string, string> = {};
   if (search) paginationParams.q = search;
   if (lowStock) paginationParams.low_stock = "true";
@@ -121,54 +120,13 @@ export default async function LagerPage({
           <AlertTriangle className="h-4 w-4" />
           Låg lagernivå
         </Link>
+
+        <span className="text-xs text-workshop-muted ml-2">
+          💡 Klicka på saldo/pris för att redigera
+        </span>
       </div>
 
-      <div className="surface overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-workshop-border bg-workshop-elevated">
-              <th className="px-4 py-3 text-left text-xs font-medium text-workshop-muted uppercase">Artikelnr</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-workshop-muted uppercase">Benämning</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-workshop-muted uppercase hidden md:table-cell">Kategori</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-workshop-muted uppercase">Lagersaldo</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-workshop-muted uppercase hidden md:table-cell">Försäljningspris</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-workshop-muted uppercase hidden lg:table-cell">Pålägg</th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((p) => {
-              const isLow = parseFloat(p.stockQty) <= parseFloat(p.stockMinQty);
-              return (
-                <tr key={p.id} className="border-b border-workshop-border hover:bg-workshop-elevated/50">
-                  <td className="px-4 py-3 font-mono text-workshop-muted text-xs">{p.partNumber}</td>
-                  <td className="px-4 py-3">
-                    <Link href={`/lager/${p.id}`} className="hover:text-workshop-accent">
-                      <p className="font-medium text-workshop-text">{p.name}</p>
-                    </Link>
-                  </td>
-                  <td className="px-4 py-3 text-workshop-muted hidden md:table-cell">{p.category ?? "–"}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={`font-mono ${isLow ? "text-red-400" : "text-workshop-text"}`}>
-                      {p.stockQty} {p.unit}
-                    </span>
-                    {isLow && <AlertTriangle className="inline h-3 w-3 text-red-400 ml-1" />}
-                  </td>
-                  <td className="px-4 py-3 text-right text-workshop-text hidden md:table-cell">
-                    {formatCurrency(parseFloat(p.sellPrice))}
-                  </td>
-                  <td className="px-4 py-3 text-right text-workshop-muted hidden lg:table-cell">
-                    {p.markupPct ? `${parseFloat(p.markupPct).toFixed(0)}%` : "–"}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-
-        {data.length === 0 && (
-          <p className="text-center text-workshop-muted py-8 text-sm">Inga artiklar hittades</p>
-        )}
-      </div>
+      <LagerTable data={data} />
 
       <Pagination
         currentPage={page}

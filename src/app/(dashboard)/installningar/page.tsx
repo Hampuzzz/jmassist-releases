@@ -30,10 +30,10 @@ const settingsLinks = [
     description: "Hämta iCal-länk för din telefonkalender",
   },
   {
-    href:        "/installningar/server",
+    href:        "/installningar/serverstatus",
     icon:        Server,
     title:       "Serverstatus",
-    description: "Övervaka DATAHUNTER, Redis, databas och serveranslutningar",
+    description: "Övervaka databas, scraper, integrationer och serveranslutningar",
   },
 ];
 

@@ -9,6 +9,7 @@ import {
   Search, X, Plus, ChevronRight,
 } from "lucide-react";
 import DeleteButton from "@/components/DeleteButton";
+import { EnrichButton } from "@/components/vagnkort/EnrichButton";
 
 const FUEL_LABELS: Record<string, string> = {
   petrol: "Bensin", diesel: "Diesel", electric: "El", hybrid: "Hybrid",
@@ -165,11 +166,19 @@ export default function VehicleDetailPage() {
             </p>
           </div>
         </div>
-        <DeleteButton
-          id={vehicle.id}
-          endpoint="/api/vagnkort"
-          confirmMessage="Är du säker på att du vill ta bort detta fordon?"
-        />
+        <div className="flex items-center gap-2">
+          <EnrichButton
+            vehicleId={vehicle.id}
+            regNr={vehicle.regNr}
+            showLabel
+            onEnriched={() => mutateVehicle()}
+          />
+          <DeleteButton
+            id={vehicle.id}
+            endpoint="/api/vagnkort"
+            confirmMessage="Är du säker på att du vill ta bort detta fordon?"
+          />
+        </div>
       </div>
 
       {success && (

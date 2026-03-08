@@ -39,6 +39,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Skip auth for portal API (uses own JWT auth)
+  if (pathname.startsWith("/api/portal/")) {
+    return NextResponse.next();
+  }
+
   // Skip auth for auth callback, iCal, and public approval endpoints
   if (
     pathname.startsWith("/api/auth") ||

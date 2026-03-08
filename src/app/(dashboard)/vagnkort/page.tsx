@@ -6,6 +6,7 @@ import { eq, desc, ilike } from "drizzle-orm";
 import DeleteButton from "@/components/DeleteButton";
 import { Pagination } from "@/components/ui/Pagination";
 import { EnrichStatus } from "@/components/vagnkort/EnrichStatus";
+import { EnrichButton } from "@/components/vagnkort/EnrichButton";
 
 export const metadata = { title: "Vagnkort" };
 export const dynamic = "force-dynamic";
@@ -128,11 +129,17 @@ export default async function VagnkortPage({
                   {v.mileageKm ? `${v.mileageKm.toLocaleString("sv-SE")} km` : "–"}
                 </td>
                 <td className="px-4 py-3 text-right">
-                  <DeleteButton
-                    id={v.id}
-                    endpoint="/api/vagnkort"
-                    confirmMessage="Är du säker på att du vill ta bort detta fordon?"
-                  />
+                  <div className="flex items-center justify-end gap-1">
+                    <EnrichButton
+                      vehicleId={v.id}
+                      regNr={v.regNr}
+                    />
+                    <DeleteButton
+                      id={v.id}
+                      endpoint="/api/vagnkort"
+                      confirmMessage="Är du säker på att du vill ta bort detta fordon?"
+                    />
+                  </div>
                 </td>
               </tr>
             ))}

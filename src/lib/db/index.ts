@@ -10,6 +10,8 @@ const isCloud = connectionString.includes("pooler.supabase.com");
 // Disable prefetch as it is not supported for "Transaction" pool mode
 const client = postgres(connectionString, {
   prepare: false,
+  max: 5,  // Begränsa till 5 connections (Supabase free har max ~15)
+  idle_timeout: 20,
   ...(isCloud ? { ssl: "require" } : {}),
 });
 

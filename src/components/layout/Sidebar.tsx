@@ -136,7 +136,7 @@ export function Sidebar() {
           );
         })}
         <div className="hidden md:block px-3 pt-2 text-xs text-workshop-muted/50">
-          v{process.env.NEXT_PUBLIC_APP_VERSION ?? "1.6.1"}
+          v{process.env.NEXT_PUBLIC_APP_VERSION ?? "1.8.1"}
         </div>
       </div>
     </aside>
