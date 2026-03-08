@@ -17,43 +17,36 @@ export async function POST(request: NextRequest) {
 
   const { ids } = (await request.json()) as { ids?: string[] };
 
-  // Get approved reminders
-  let reminders;
+  // Get approved reminders — filter in SQL when IDs provided
+  const conditions = [eq(crmReminders.status, "approved" as any)];
   if (ids && ids.length > 0) {
-    reminders = await db
-      .select({
-        id: crmReminders.id,
-        customerId: crmReminders.customerId,
-        message: crmReminders.message,
-        phone: customers.phone,
-      })
-      .from(crmReminders)
-      .leftJoin(customers, eq(crmReminders.customerId, customers.id))
-      .where(eq(crmReminders.status, "approved"));
-
-    reminders = reminders.filter((r) => ids.includes(r.id));
-  } else {
-    reminders = await db
-      .select({
-        id: crmReminders.id,
-        customerId: crmReminders.customerId,
-        message: crmReminders.message,
-        phone: customers.phone,
-      })
-      .from(crmReminders)
-      .leftJoin(customers, eq(crmReminders.customerId, customers.id))
-      .where(eq(crmReminders.status, "approved"));
+    conditions.push(inArray(crmReminders.id, ids));
   }
+
+  const reminders = await db
+    .select({
+      id: crmReminders.id,
+      customerId: crmReminders.customerId,
+      message: crmReminders.message,
+      phone: customers.phone,
+    })
+    .from(crmReminders)
+    .leftJoin(customers, eq(crmReminders.customerId, customers.id))
+    .where(and(...conditions));
 
   let sent = 0;
   let failed = 0;
   const sentIds: string[] = [];
 
-  for (const reminder of reminders) {
+  for (let idx = 0; idx < reminders.length; idx++) {
+    const reminder = reminders[idx];
     if (!reminder.phone) {
       failed++;
       continue;
     }
+
+    // Brief delay between SMS to avoid rate limiting (skip before first)
+    if (idx > 0) await new Promise((r) => setTimeout(r, 500));
 
     try {
       await sendSms(reminder.phone, reminder.message, {
@@ -68,9 +61,6 @@ export async function POST(request: NextRequest) {
       console.error(`[crm] SMS failed for reminder ${reminder.id}:`, err.message);
       failed++;
     }
-
-    // Brief delay between SMS to avoid rate limiting
-    if (sent > 0) await new Promise((r) => setTimeout(r, 500));
   }
 
   // Batch update all successfully sent reminders in one query

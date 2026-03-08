@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createServerClient } from "@/lib/supabase/server";
 import { execSync } from "child_process";
 import path from "path";
 import fs from "fs";
@@ -34,6 +35,13 @@ function updateEnvVersion(newVersion: string) {
 }
 
 export async function POST() {
+  // Auth check — middleware skips /api/update/ but install needs protection
+  const supabase = createServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     // 1. Stash any local changes so pull doesn't fail
     try {

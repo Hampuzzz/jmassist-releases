@@ -1,8 +1,10 @@
 import { SignJWT, jwtVerify } from "jose";
 
-const secret = new TextEncoder().encode(
-  process.env.APPROVAL_SECRET ?? process.env.ICAL_SECRET ?? "fallback-approval-secret-change-in-production",
-);
+const approvalSecretValue = process.env.APPROVAL_SECRET ?? process.env.ICAL_SECRET;
+if (!approvalSecretValue) {
+  throw new Error("APPROVAL_SECRET or ICAL_SECRET environment variable is required for approval tokens");
+}
+const secret = new TextEncoder().encode(approvalSecretValue);
 
 /**
  * Sign a token for public approval page access.

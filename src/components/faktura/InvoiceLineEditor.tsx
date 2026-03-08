@@ -87,14 +87,24 @@ export function InvoiceLineEditor({ invoiceId, isDraft, initialLines }: Props) {
   function calcTotals() {
     let subtotal = 0;
     let vat = 0;
+    let vmbVat = 0;
     for (const line of lines) {
       const lt = calcLineTotal(line);
       subtotal += lt;
-      if (!line.vmbEligible) {
+      if (line.vmbEligible) {
+        // VMB: VAT is 1/5 of margin (sell price - cost basis)
+        const qty = parseFloat(line.quantity) || 0;
+        const price = parseFloat(line.unitPrice) || 0;
+        const disc = parseFloat(line.discountPct) || 0;
+        const cost = parseFloat(line.costBasis) || 0;
+        const effectivePrice = price * (1 - disc / 100);
+        const margin = effectivePrice - cost;
+        if (margin > 0) vmbVat += margin * qty * 0.20;
+      } else {
         vat += lt * 0.25;
       }
     }
-    return { subtotal, vat, total: subtotal + vat };
+    return { subtotal, vat: vat + vmbVat, total: subtotal + vat + vmbVat };
   }
 
   async function handleSave() {

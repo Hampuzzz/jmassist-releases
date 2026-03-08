@@ -3,9 +3,10 @@ import { db } from "@/lib/db";
 import { portalAccounts, customers } from "@/lib/db/schemas";
 import { eq } from "drizzle-orm";
 
-const SECRET = new TextEncoder().encode(
-  process.env.NEXTAUTH_SECRET ?? "fallback-portal-secret"
-);
+if (!process.env.NEXTAUTH_SECRET) {
+  throw new Error("NEXTAUTH_SECRET environment variable is required for portal auth");
+}
+const SECRET = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
 
 export interface PortalJwtPayload {
   sub: string; // portalAccount.id

@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     }).where(eq(portalAccounts.id, account.id));
 
     // TODO: Send email with reset link
-    console.log(`[portal-forgot] Reset token for ${email}: ${resetToken}`);
+    console.log(`[portal-forgot] Reset link generated for ${email}`);
 
     return NextResponse.json({ message: "Om e-postadressen finns skickas en återställningslänk" });
   } catch (err: any) {
