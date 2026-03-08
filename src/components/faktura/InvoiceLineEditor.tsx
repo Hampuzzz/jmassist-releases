@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Plus, Trash2, Save, X, Pencil } from "lucide-react";
 
 interface LineItem {
+  _key: number;
   description: string;
   quantity: string;
   unit: string;
@@ -15,16 +16,21 @@ interface LineItem {
   costBasis: string;
 }
 
-const emptyLine: LineItem = {
-  description: "",
-  quantity: "1",
-  unit: "st",
-  unitPrice: "",
-  discountPct: "0",
-  lineType: "labor",
-  vmbEligible: false,
-  costBasis: "",
-};
+let nextKey = 1;
+function createLine(overrides: Partial<Omit<LineItem, "_key">> = {}): LineItem {
+  return {
+    _key: nextKey++,
+    description: "",
+    quantity: "1",
+    unit: "st",
+    unitPrice: "",
+    discountPct: "0",
+    lineType: "labor",
+    vmbEligible: false,
+    costBasis: "",
+    ...overrides,
+  };
+}
 
 interface Props {
   invoiceId: string;
@@ -48,7 +54,7 @@ export function InvoiceLineEditor({ invoiceId, isDraft, initialLines }: Props) {
   const [error, setError] = useState("");
   const [lines, setLines] = useState<LineItem[]>(
     initialLines.length > 0
-      ? initialLines.map((l) => ({
+      ? initialLines.map((l) => createLine({
           description: l.description,
           quantity: l.quantity,
           unit: l.unit,
@@ -58,13 +64,13 @@ export function InvoiceLineEditor({ invoiceId, isDraft, initialLines }: Props) {
           vmbEligible: l.vmbEligible,
           costBasis: l.costBasis ?? "",
         }))
-      : [{ ...emptyLine }],
+      : [createLine()],
   );
 
   if (!isDraft) return null;
 
   function addLine() {
-    setLines((prev) => [...prev, { ...emptyLine }]);
+    setLines((prev) => [...prev, createLine()]);
   }
 
   function removeLine(index: number) {
@@ -124,7 +130,7 @@ export function InvoiceLineEditor({ invoiceId, isDraft, initialLines }: Props) {
       const res = await fetch(`/api/faktura/${invoiceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lines: validLines }),
+        body: JSON.stringify({ lines: validLines.map(({ _key, ...rest }) => rest) }),
       });
 
       if (!res.ok) {
@@ -179,7 +185,7 @@ export function InvoiceLineEditor({ invoiceId, isDraft, initialLines }: Props) {
       <div className="space-y-3">
         {lines.map((line, i) => (
           <div
-            key={i}
+            key={line._key}
             className="grid grid-cols-12 gap-2 items-end bg-workshop-bg/50 p-3 rounded-md"
           >
             {/* Description - spans more on small screens */}

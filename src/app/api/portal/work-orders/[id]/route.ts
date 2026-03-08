@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { workOrders, workOrderTasks, workOrderParts, vehicles, vehicleHealthChecks, vhcItems, parts } from "@/lib/db/schemas";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { getPortalCustomer } from "@/lib/portal/auth";
 
 const mapStatus = (s: string) => {
@@ -24,10 +24,18 @@ export async function GET(request: Request, { params }: { params: { id: string }
   const tasks = await db.select().from(workOrderTasks).where(eq(workOrderTasks.workOrderId, order.id));
   const orderParts = await db.select().from(workOrderParts).where(eq(workOrderParts.workOrderId, order.id));
 
-  // Resolve part names
-  const partsWithNames = await Promise.all(orderParts.map(async (op) => {
-    const [part] = await db.select().from(parts).where(eq(parts.id, op.partId));
-    return { id: op.id, name: part?.name || "Okänd del", quantity: Number(op.quantity), unit_price: Number(op.unitSellPrice) };
+  // Batch-fetch part names (avoid N+1 queries)
+  const partIds = Array.from(new Set(orderParts.map((op) => op.partId).filter(Boolean))) as string[];
+  const partsList = partIds.length > 0
+    ? await db.select({ id: parts.id, name: parts.name }).from(parts).where(inArray(parts.id, partIds))
+    : [];
+  const partMap = new Map(partsList.map((p) => [p.id, p.name]));
+
+  const partsWithNames = orderParts.map((op) => ({
+    id: op.id,
+    name: (op.partId ? partMap.get(op.partId) : undefined) || "Okänd del",
+    quantity: Number(op.quantity),
+    unit_price: Number(op.unitSellPrice),
   }));
 
   // VHC report for this work order

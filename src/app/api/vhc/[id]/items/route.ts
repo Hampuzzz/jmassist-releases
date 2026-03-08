@@ -27,7 +27,14 @@ export async function PUT(
   // Allow both authenticated and anonymous (customer approval)
   const isAuth = !!user;
 
-  const { items } = (await request.json()) as { items: ItemUpdate[] };
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Ogiltig JSON" }, { status: 400 });
+  }
+
+  const { items } = body as { items: ItemUpdate[] };
 
   if (!items || !Array.isArray(items)) {
     return NextResponse.json({ error: "items array krävs" }, { status: 400 });

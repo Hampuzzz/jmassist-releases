@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { Plus, Trash2, Loader2, Check, Package, ClipboardList } from "lucide-react";
 
 interface PurchaseLine {
+  _key: number;
   partNumber: string;
   partName: string;
   quantity: string;
@@ -23,7 +24,9 @@ interface WorkOrderOption {
   customerName: string;
 }
 
+let nextLineKey = 1;
 const emptyLine = (): PurchaseLine => ({
+  _key: nextLineKey++,
   partNumber: "",
   partName: "",
   quantity: "1",
@@ -231,7 +234,7 @@ export function RegisterPurchaseForm() {
             </div>
 
             {lines.map((line, i) => (
-              <div key={i} className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr_80px_100px_100px_36px] gap-2 items-center">
+              <div key={line._key} className="grid grid-cols-1 md:grid-cols-[1fr_1.5fr_80px_100px_100px_36px] gap-2 items-center">
                 <input
                   type="text"
                   value={line.partNumber}

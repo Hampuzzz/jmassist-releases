@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
 import { vehicles, workOrders, invoices, crmReminders } from "@/lib/db/schemas";
-import { eq, and, ne, or, count, desc, asc, sql } from "drizzle-orm";
+import { eq, and, ne, or, count, desc, asc, sql, inArray } from "drizzle-orm";
 import { getPortalCustomer } from "@/lib/portal/auth";
 
 export async function GET(request: Request) {
@@ -30,15 +30,21 @@ export async function GET(request: Request) {
     return map[s] || s;
   };
 
-  // Get vehicles for the recent orders
-  const recentWithVehicles = await Promise.all(recentOrders.map(async (o) => {
-    const [v] = await db.select().from(vehicles).where(eq(vehicles.id, o.vehicleId));
+  // Batch-fetch vehicles for recent orders (avoid N+1 queries)
+  const vehicleIds = Array.from(new Set(recentOrders.map((o) => o.vehicleId).filter(Boolean))) as string[];
+  const vehicleList = vehicleIds.length > 0
+    ? await db.select().from(vehicles).where(inArray(vehicles.id, vehicleIds))
+    : [];
+  const vehicleMap = new Map(vehicleList.map((v) => [v.id, v]));
+
+  const recentWithVehicles = recentOrders.map((o) => {
+    const v = o.vehicleId ? vehicleMap.get(o.vehicleId) : undefined;
     return {
       id: o.id, order_number: o.orderNumber, status: mapOrderStatus(o.status),
       created_at: o.receivedAt?.toISOString(), description: o.customerComplaint,
       vehicle: v ? { id: v.id, registration_number: v.regNr, make: v.brand, model: v.model, year: v.modelYear } : undefined,
     };
-  }));
+  });
 
   const nextReminders = await db.select().from(crmReminders).where(and(eq(crmReminders.customerId, cid), eq(crmReminders.status, "sent"))).orderBy(asc(crmReminders.dueDate)).limit(5);
 

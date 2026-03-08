@@ -161,22 +161,6 @@ export async function PATCH(
       );
     }
 
-    // Update each item
-    for (const decision of items) {
-      await db
-        .update(approvalItems)
-        .set({
-          approved: decision.approved,
-          customerNote: decision.customerNote ?? null,
-        })
-        .where(
-          and(
-            eq(approvalItems.id, decision.id),
-            eq(approvalItems.approvalRequestId, approvalRequestId),
-          ),
-        );
-    }
-
     // Determine overall status
     const allApproved = items.every((i) => i.approved);
     const allDenied = items.every((i) => !i.approved);
@@ -186,16 +170,33 @@ export async function PATCH(
       ? "denied"
       : "partially_approved";
 
-    // Update approval request
-    await db
-      .update(approvalRequests)
-      .set({
-        status: overallStatus,
-        customerMessage: message ?? null,
-        respondedAt: new Date(),
-        updatedAt: new Date(),
-      })
-      .where(eq(approvalRequests.id, approvalRequestId));
+    // Update items + request atomically
+    await db.transaction(async (tx) => {
+      for (const decision of items) {
+        await tx
+          .update(approvalItems)
+          .set({
+            approved: decision.approved,
+            customerNote: decision.customerNote ?? null,
+          })
+          .where(
+            and(
+              eq(approvalItems.id, decision.id),
+              eq(approvalItems.approvalRequestId, approvalRequestId),
+            ),
+          );
+      }
+
+      await tx
+        .update(approvalRequests)
+        .set({
+          status: overallStatus,
+          customerMessage: message ?? null,
+          respondedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(eq(approvalRequests.id, approvalRequestId));
+    });
 
     return NextResponse.json({
       success: true,
