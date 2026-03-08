@@ -63,7 +63,7 @@ export function EditableCell({ value, partId, field, type = "number", suffix, cl
           if (e.key === "Enter") save();
           if (e.key === "Escape") { setCurrentValue(value); setEditing(false); }
         }}
-        className={`w-20 px-1.5 py-0.5 bg-workshop-bg border border-workshop-accent rounded text-sm text-workshop-text text-${align} focus:outline-none`}
+        className={`w-20 px-1.5 py-0.5 bg-workshop-bg border border-workshop-accent rounded text-sm text-workshop-text ${align === "left" ? "text-left" : "text-right"} focus:outline-none`}
       />
     );
   }

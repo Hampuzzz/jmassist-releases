@@ -168,16 +168,7 @@ export async function POST(
 
     const totalIncVat = subtotalExVat + vatAmount + vmbVatAmount;
 
-    // 6. Generate number (separate series for quotes and invoices)
-    const prefix = isQuote ? "OFF" : "FAK";
-    const [countRow] = await db
-      .select({ total: count(invoices.id) })
-      .from(invoices)
-      .where(eq(invoices.type, docType));
-    const seq = (countRow?.total ?? 0) + 1;
-    const invoiceNumber = `${prefix}-${String(seq).padStart(4, "0")}`;
-
-    // 7. Calculate dates
+    // 6. Use transaction for atomic number generation + insert + link
     const now = new Date();
     const invoiceDate = now.toISOString().split("T")[0];
     const paymentTermsDays = 30;
@@ -185,42 +176,51 @@ export async function POST(
       .toISOString()
       .split("T")[0];
 
-    // 8. Insert invoice/quote
-    const [invoice] = await db
-      .insert(invoices)
-      .values({
-        type: docType,
-        status: "draft",
-        invoiceNumber,
-        customerId: order.customerId,
-        workOrderId,
-        paymentTermsDays: isQuote ? undefined : paymentTermsDays,
-        invoiceDate,
-        dueDate: isQuote ? undefined : dueDate,
-        subtotalExVat: subtotalExVat.toFixed(4),
-        vatAmount: vatAmount.toFixed(4),
-        vmbVatAmount: vmbVatAmount.toFixed(4),
-        totalIncVat: totalIncVat.toFixed(4),
-        notes: `${isQuote ? "Offert" : "Faktura"} genererad från arbetsorder ${order.orderNumber}`,
-        createdBy: user.id,
-      })
-      .returning();
+    const invoice = await db.transaction(async (tx) => {
+      const prefix = isQuote ? "OFF" : "FAK";
+      const [countRow] = await tx
+        .select({ total: count(invoices.id) })
+        .from(invoices)
+        .where(eq(invoices.type, docType));
+      const seq = (countRow?.total ?? 0) + 1;
+      const invoiceNumber = `${prefix}-${String(seq).padStart(4, "0")}`;
 
-    // 9. Insert invoice lines
-    await db.insert(invoiceLines).values(
-      allLines.map((l) => ({ ...l, invoiceId: invoice.id })),
-    );
+      const [inv] = await tx
+        .insert(invoices)
+        .values({
+          type: docType,
+          status: "draft",
+          invoiceNumber,
+          customerId: order.customerId,
+          workOrderId,
+          paymentTermsDays: isQuote ? undefined : paymentTermsDays,
+          invoiceDate,
+          dueDate: isQuote ? undefined : dueDate,
+          subtotalExVat: subtotalExVat.toFixed(4),
+          vatAmount: vatAmount.toFixed(4),
+          vmbVatAmount: vmbVatAmount.toFixed(4),
+          totalIncVat: totalIncVat.toFixed(4),
+          notes: `${isQuote ? "Offert" : "Faktura"} genererad från arbetsorder ${order.orderNumber}`,
+          createdBy: user.id,
+        })
+        .returning();
 
-    // 10. Link invoice to work order (only for invoices, not quotes)
-    if (!isQuote) {
-      await db
-        .update(workOrders)
-        .set({ invoiceId: invoice.id, updatedAt: new Date() })
-        .where(eq(workOrders.id, workOrderId));
-    }
+      await tx.insert(invoiceLines).values(
+        allLines.map((l) => ({ ...l, invoiceId: inv.id })),
+      );
+
+      if (!isQuote) {
+        await tx
+          .update(workOrders)
+          .set({ invoiceId: inv.id, updatedAt: new Date() })
+          .where(eq(workOrders.id, workOrderId));
+      }
+
+      return inv;
+    });
 
     return NextResponse.json(
-      { invoiceId: invoice.id, invoiceNumber },
+      { invoiceId: invoice.id, invoiceNumber: invoice.invoiceNumber },
       { status: 201 },
     );
   } catch (err: any) {

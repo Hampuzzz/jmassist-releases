@@ -203,7 +203,7 @@ export default function DayCalendar({ appointments, resources, workOrders, targe
     } finally {
       setIsMoving(false);
     }
-  }, [targetDate]);
+  }, [targetDate, router]);
 
   // Group appointments by resource
   const apptByResource = useMemo(() => {

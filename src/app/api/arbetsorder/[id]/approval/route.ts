@@ -80,41 +80,42 @@ export async function POST(
       }));
     }
 
-    // Create approval request
+    // Create approval request with real JWT token atomically
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
-    const tokenPlaceholder = `temp-${Date.now()}`; // Will be replaced after insert
 
-    const [approvalRequest] = await db
-      .insert(approvalRequests)
-      .values({
-        workOrderId: params.id,
-        token: tokenPlaceholder,
-        expiresAt,
-      })
-      .returning();
+    // Use a random placeholder, then immediately replace with real JWT in a transaction
+    const { approvalRequest, token } = await db.transaction(async (tx) => {
+      const [ar] = await tx
+        .insert(approvalRequests)
+        .values({
+          workOrderId: params.id,
+          token: crypto.randomUUID(), // safe placeholder (not guessable)
+          expiresAt,
+        })
+        .returning();
 
-    // Sign the real JWT token
-    const token = await signApprovalToken(approvalRequest.id);
+      const jwt = await signApprovalToken(ar.id);
 
-    // Update with real token
-    await db
-      .update(approvalRequests)
-      .set({ token })
-      .where(eq(approvalRequests.id, approvalRequest.id));
+      await tx
+        .update(approvalRequests)
+        .set({ token: jwt })
+        .where(eq(approvalRequests.id, ar.id));
 
-    // Create approval items
-    if (bodyItems.length > 0) {
-      await db.insert(approvalItems).values(
-        bodyItems.map((item, i) => ({
-          approvalRequestId: approvalRequest.id,
-          inspectionResultId: item.inspectionResultId ?? null,
-          description: item.description,
-          estimatedCost: item.estimatedCost?.toString() ?? null,
-          photoUrls: item.photoUrls ?? [],
-          sortOrder: i,
-        })),
-      );
-    }
+      if (bodyItems.length > 0) {
+        await tx.insert(approvalItems).values(
+          bodyItems.map((item, i) => ({
+            approvalRequestId: ar.id,
+            inspectionResultId: item.inspectionResultId ?? null,
+            description: item.description,
+            estimatedCost: item.estimatedCost?.toString() ?? null,
+            photoUrls: item.photoUrls ?? [],
+            sortOrder: i,
+          })),
+        );
+      }
+
+      return { approvalRequest: ar, token: jwt };
+    });
 
     // Build public URL
     const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";

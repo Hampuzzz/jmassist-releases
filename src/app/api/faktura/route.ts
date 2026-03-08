@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
 
       if (line.vmbEligible) {
         const cost = parseFloat(line.costBasis) || 0;
-        const effectivePrice = price * (1 - discPct / 100); // discounted price for VMB margin
+        const effectivePrice = price * (1 - discPct / 100);
         const margin = effectivePrice - cost;
         if (margin > 0) vmbVatAmount += margin * qty * VMB_FACTOR;
       } else {
@@ -87,7 +87,6 @@ export async function POST(request: NextRequest) {
         unit: line.unit ?? "st",
         unitPrice: price.toString(),
         discountPct: discPct.toString(),
-        // line_total, vat_amount, vmb_vat_amount are GENERATED columns in DB — do NOT insert
         vmbEligible: line.vmbEligible ?? false,
         costBasis: line.costBasis ? line.costBasis.toString() : null,
         partId: line.partId ?? null,
@@ -98,47 +97,48 @@ export async function POST(request: NextRequest) {
     const totalIncVat = subtotalExVat + vatAmount + vmbVatAmount;
     const paymentTermsDays = parseInt(invoiceData.paymentTermsDays) || 30;
 
-    // Calculate dates
     const now = new Date();
     const invoiceDate = now.toISOString().split("T")[0];
     const dueDate = new Date(now.getTime() + paymentTermsDays * 86400000).toISOString().split("T")[0];
 
-    // Generate invoice number
-    const [countRow] = await db
-      .select({ total: count(invoices.id) })
-      .from(invoices);
-    const seq = (countRow?.total ?? 0) + 1;
-    const invoiceNumber = invoiceData.type === "quote"
-      ? `OFF-${String(seq).padStart(4, "0")}`
-      : `FAK-${String(seq).padStart(4, "0")}`;
+    // Use transaction to ensure atomic invoice number generation + insert
+    const invoice = await db.transaction(async (tx) => {
+      const [countRow] = await tx
+        .select({ total: count(invoices.id) })
+        .from(invoices);
+      const seq = (countRow?.total ?? 0) + 1;
+      const invoiceNumber = invoiceData.type === "quote"
+        ? `OFF-${String(seq).padStart(4, "0")}`
+        : `FAK-${String(seq).padStart(4, "0")}`;
 
-    // Create the invoice with totals
-    const [invoice] = await db
-      .insert(invoices)
-      .values({
-        type: invoiceData.type ?? "invoice",
-        status: "draft",
-        invoiceNumber,
-        customerId: invoiceData.customerId,
-        workOrderId: invoiceData.workOrderId ?? null,
-        paymentTermsDays,
-        invoiceDate,
-        dueDate,
-        subtotalExVat: subtotalExVat.toFixed(4),
-        vatAmount: vatAmount.toFixed(4),
-        vmbVatAmount: vmbVatAmount.toFixed(4),
-        totalIncVat: totalIncVat.toFixed(4),
-        notes: invoiceData.notes ?? null,
-        createdBy: user.id,
-      })
-      .returning();
+      const [inv] = await tx
+        .insert(invoices)
+        .values({
+          type: invoiceData.type ?? "invoice",
+          status: "draft",
+          invoiceNumber,
+          customerId: invoiceData.customerId,
+          workOrderId: invoiceData.workOrderId ?? null,
+          paymentTermsDays,
+          invoiceDate,
+          dueDate,
+          subtotalExVat: subtotalExVat.toFixed(4),
+          vatAmount: vatAmount.toFixed(4),
+          vmbVatAmount: vmbVatAmount.toFixed(4),
+          totalIncVat: totalIncVat.toFixed(4),
+          notes: invoiceData.notes ?? null,
+          createdBy: user.id,
+        })
+        .returning();
 
-    // Insert line items
-    if (parsedLines.length > 0) {
-      await db.insert(invoiceLines).values(
-        parsedLines.map((l) => ({ ...l, invoiceId: invoice.id })),
-      );
-    }
+      if (parsedLines.length > 0) {
+        await tx.insert(invoiceLines).values(
+          parsedLines.map((l) => ({ ...l, invoiceId: inv.id })),
+        );
+      }
+
+      return inv;
+    });
 
     return NextResponse.json({ data: invoice }, { status: 201 });
   } catch (err: any) {

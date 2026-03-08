@@ -173,32 +173,35 @@ export async function PATCH(
 
       const totalIncVat = subtotalExVat + vatAmount + vmbVatAmount;
 
-      // Delete old lines and insert new ones
-      await db.delete(invoiceLines).where(eq(invoiceLines.invoiceId, params.id));
+      // Use transaction to prevent data loss if insert fails after delete
+      const updated = await db.transaction(async (tx) => {
+        await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, params.id));
 
-      if (parsedLines.length > 0) {
-        await db.insert(invoiceLines).values(
-          parsedLines.map((l) => ({ ...l, invoiceId: params.id })),
-        );
-      }
+        if (parsedLines.length > 0) {
+          await tx.insert(invoiceLines).values(
+            parsedLines.map((l) => ({ ...l, invoiceId: params.id })),
+          );
+        }
 
-      // Update invoice totals
-      const updateFields: Record<string, unknown> = {
-        subtotalExVat: subtotalExVat.toFixed(4),
-        vatAmount: vatAmount.toFixed(4),
-        vmbVatAmount: vmbVatAmount.toFixed(4),
-        totalIncVat: totalIncVat.toFixed(4),
-        updatedAt: new Date(),
-      };
-      if (typeof notes === "string") {
-        updateFields.notes = notes;
-      }
+        const updateFields: Record<string, unknown> = {
+          subtotalExVat: subtotalExVat.toFixed(4),
+          vatAmount: vatAmount.toFixed(4),
+          vmbVatAmount: vmbVatAmount.toFixed(4),
+          totalIncVat: totalIncVat.toFixed(4),
+          updatedAt: new Date(),
+        };
+        if (typeof notes === "string") {
+          updateFields.notes = notes;
+        }
 
-      const [updated] = await db
-        .update(invoices)
-        .set(updateFields)
-        .where(eq(invoices.id, params.id))
-        .returning();
+        const [inv] = await tx
+          .update(invoices)
+          .set(updateFields)
+          .where(eq(invoices.id, params.id))
+          .returning();
+
+        return inv;
+      });
 
       return NextResponse.json({ data: updated });
     }

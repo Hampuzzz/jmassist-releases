@@ -76,31 +76,36 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    // Check for related work orders
-    const relatedWorkOrders = await db
-      .select({ id: workOrders.id })
-      .from(workOrders)
-      .where(eq(workOrders.vehicleId, params.id))
-      .limit(1);
+    // Use transaction to make check + delete atomic
+    const deleted = await db.transaction(async (tx) => {
+      const relatedWorkOrders = await tx
+        .select({ id: workOrders.id })
+        .from(workOrders)
+        .where(eq(workOrders.vehicleId, params.id))
+        .limit(1);
 
-    if (relatedWorkOrders.length > 0) {
-      return NextResponse.json(
-        { error: "Fordonet har relaterade arbetsordrar och kan inte tas bort." },
-        { status: 409 },
-      );
-    }
+      if (relatedWorkOrders.length > 0) {
+        throw new Error("RELATED_RECORDS");
+      }
 
-    const deleted = await db
-      .delete(vehicles)
-      .where(eq(vehicles.id, params.id))
-      .returning();
+      return tx
+        .delete(vehicles)
+        .where(eq(vehicles.id, params.id))
+        .returning();
+    });
 
     if (deleted.length === 0) {
       return NextResponse.json({ error: "Fordonet hittades inte" }, { status: 404 });
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err) {
+  } catch (err: any) {
+    if (err.message === "RELATED_RECORDS") {
+      return NextResponse.json(
+        { error: "Fordonet har relaterade arbetsordrar och kan inte tas bort." },
+        { status: 409 },
+      );
+    }
     console.error("[vagnkort] Delete failed:", err);
     return NextResponse.json({ error: "Databasfel" }, { status: 500 });
   }

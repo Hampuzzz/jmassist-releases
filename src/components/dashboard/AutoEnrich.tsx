@@ -51,14 +51,24 @@ export function AutoEnrich() {
           return;
         }
 
-        // Parse SSE stream
+        // Parse SSE stream with safety limits
         const reader = res.body?.getReader();
         if (!reader) { setStatus("none"); return; }
 
         const decoder = new TextDecoder();
         let buffer = "";
+        let eventCount = 0;
+        const MAX_EVENTS = 500; // Safety limit to prevent memory leak
+        const TIMEOUT_MS = 5 * 60 * 1000; // 5 minute max duration
+        const startTime = Date.now();
 
         while (true) {
+          if (eventCount >= MAX_EVENTS || Date.now() - startTime > TIMEOUT_MS) {
+            reader.cancel();
+            setStatus("done");
+            break;
+          }
+
           const { done: streamDone, value } = await reader.read();
           if (streamDone) break;
 
@@ -67,6 +77,7 @@ export function AutoEnrich() {
           buffer = lines.pop() ?? "";
 
           for (const chunk of lines) {
+            eventCount++;
             const dataLine = chunk.split("\n").find((l) => l.startsWith("data: "));
             if (!dataLine) continue;
             try {
@@ -78,12 +89,13 @@ export function AutoEnrich() {
                 setStatus("done");
               }
             } catch {
-              // skip
+              // skip malformed events
             }
           }
         }
       } catch (err: any) {
         if (err.name !== "AbortError") {
+          console.warn("[AutoEnrich] Error:", err.message);
           setStatus("none");
         }
       }

@@ -39,45 +39,46 @@ export async function DELETE(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   try {
-    // Check for related invoices
-    const relatedInvoices = await db
-      .select({ id: invoices.id })
-      .from(invoices)
-      .where(eq(invoices.customerId, params.id))
-      .limit(1);
+    // Use transaction to make checks + delete atomic
+    const deleted = await db.transaction(async (tx) => {
+      const relatedInvoices = await tx
+        .select({ id: invoices.id })
+        .from(invoices)
+        .where(eq(invoices.customerId, params.id))
+        .limit(1);
 
-    if (relatedInvoices.length > 0) {
-      return NextResponse.json(
-        { error: "Kunden har relaterade fakturor eller fordon och kan inte tas bort." },
-        { status: 409 },
-      );
-    }
+      if (relatedInvoices.length > 0) {
+        throw new Error("RELATED_INVOICES");
+      }
 
-    // Check for related vehicles
-    const relatedVehicles = await db
-      .select({ id: vehicles.id })
-      .from(vehicles)
-      .where(eq(vehicles.customerId, params.id))
-      .limit(1);
+      const relatedVehicles = await tx
+        .select({ id: vehicles.id })
+        .from(vehicles)
+        .where(eq(vehicles.customerId, params.id))
+        .limit(1);
 
-    if (relatedVehicles.length > 0) {
-      return NextResponse.json(
-        { error: "Kunden har relaterade fakturor eller fordon och kan inte tas bort." },
-        { status: 409 },
-      );
-    }
+      if (relatedVehicles.length > 0) {
+        throw new Error("RELATED_VEHICLES");
+      }
 
-    const deleted = await db
-      .delete(customers)
-      .where(eq(customers.id, params.id))
-      .returning();
+      return tx
+        .delete(customers)
+        .where(eq(customers.id, params.id))
+        .returning();
+    });
 
     if (deleted.length === 0) {
       return NextResponse.json({ error: "Kunden hittades inte" }, { status: 404 });
     }
 
     return NextResponse.json({ ok: true });
-  } catch (err) {
+  } catch (err: any) {
+    if (err.message === "RELATED_INVOICES" || err.message === "RELATED_VEHICLES") {
+      return NextResponse.json(
+        { error: "Kunden har relaterade fakturor eller fordon och kan inte tas bort." },
+        { status: 409 },
+      );
+    }
     console.error("[kunder] Delete failed:", err);
     return NextResponse.json({ error: "Databasfel" }, { status: 500 });
   }

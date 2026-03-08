@@ -3,6 +3,26 @@ import { createServerClient } from "@/lib/supabase/server";
 import { db } from "@/lib/db";
 import { parts } from "@/lib/db/schemas";
 import { eq, desc, and, lte, ilike, or } from "drizzle-orm";
+import { z } from "zod";
+
+const toStr = z.union([z.string(), z.number()]).transform((v) => String(v));
+
+const createPartSchema = z.object({
+  partNumber:     z.string().min(1),
+  name:           z.string().min(1),
+  description:    z.string().optional(),
+  category:       z.string().optional(),
+  unit:           z.string().optional(),
+  costPrice:      toStr.optional(),
+  sellPrice:      toStr.optional(),
+  vatRatePct:     toStr.optional(),
+  vmbEligible:    z.boolean().optional(),
+  stockQty:       toStr.optional(),
+  stockMinQty:    toStr.optional(),
+  stockLocation:  z.string().optional(),
+  supplierId:     z.string().uuid().optional().nullable(),
+  notes:          z.string().optional(),
+}).strict();
 
 export async function GET(request: NextRequest) {
   const supabase = createServerClient();
@@ -65,12 +85,26 @@ export async function POST(request: NextRequest) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const body = await request.json();
-  // Basic validation inline (add zod schema for production)
-  if (!body.name || !body.partNumber) {
-    return NextResponse.json({ error: "Namn och artikelnummer krävs" }, { status: 400 });
+  let body: any;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "Ogiltig JSON" }, { status: 400 });
   }
 
-  const [part] = await db.insert(parts).values(body).returning();
-  return NextResponse.json({ data: part }, { status: 201 });
+  const parsed = createPartSchema.safeParse(body);
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "Valideringsfel", details: parsed.error.flatten() },
+      { status: 400 },
+    );
+  }
+
+  try {
+    const [part] = await db.insert(parts).values(parsed.data).returning();
+    return NextResponse.json({ data: part }, { status: 201 });
+  } catch (err: any) {
+    console.error("[lager] POST error:", err);
+    return NextResponse.json({ error: "Kunde inte skapa artikel" }, { status: 500 });
+  }
 }

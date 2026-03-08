@@ -33,7 +33,7 @@ export const parts = pgTable("parts", {
 
 export const stockMovements = pgTable("stock_movements", {
   id:           uuid("id").primaryKey().defaultRandom(),
-  partId:       uuid("part_id").notNull(),
+  partId:       uuid("part_id").notNull().references(() => parts.id, { onDelete: "cascade" }),
   workOrderId:  uuid("work_order_id"),
   userId:       uuid("user_id"),
   reason:       stockMovementReasonEnum("reason").notNull(),
