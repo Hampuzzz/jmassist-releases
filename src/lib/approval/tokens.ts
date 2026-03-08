@@ -1,10 +1,14 @@
 import { SignJWT, jwtVerify } from "jose";
 
-const approvalSecretValue = process.env.APPROVAL_SECRET ?? process.env.ICAL_SECRET;
-if (!approvalSecretValue) {
-  throw new Error("APPROVAL_SECRET or ICAL_SECRET environment variable is required for approval tokens");
+let _secret: Uint8Array | null = null;
+function getSecret(): Uint8Array {
+  if (!_secret) {
+    const value = process.env.APPROVAL_SECRET ?? process.env.ICAL_SECRET;
+    if (!value) throw new Error("APPROVAL_SECRET or ICAL_SECRET environment variable is required");
+    _secret = new TextEncoder().encode(value);
+  }
+  return _secret;
 }
-const secret = new TextEncoder().encode(approvalSecretValue);
 
 /**
  * Sign a token for public approval page access.
@@ -15,7 +19,7 @@ export async function signApprovalToken(approvalRequestId: string): Promise<stri
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("7d")
-    .sign(secret);
+    .sign(getSecret());
 }
 
 /**
@@ -24,7 +28,7 @@ export async function signApprovalToken(approvalRequestId: string): Promise<stri
  */
 export async function verifyApprovalToken(token: string): Promise<string | null> {
   try {
-    const { payload } = await jwtVerify(token, secret);
+    const { payload } = await jwtVerify(token, getSecret());
     if (payload.scope !== "approval:view" || typeof payload.sub !== "string") return null;
     return payload.sub;
   } catch {

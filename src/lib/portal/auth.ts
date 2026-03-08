@@ -3,10 +3,14 @@ import { db } from "@/lib/db";
 import { portalAccounts, customers } from "@/lib/db/schemas";
 import { eq } from "drizzle-orm";
 
-if (!process.env.NEXTAUTH_SECRET) {
-  throw new Error("NEXTAUTH_SECRET environment variable is required for portal auth");
+let _portalSecret: Uint8Array | null = null;
+function getPortalSecret(): Uint8Array {
+  if (!_portalSecret) {
+    if (!process.env.NEXTAUTH_SECRET) throw new Error("NEXTAUTH_SECRET environment variable is required");
+    _portalSecret = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
+  }
+  return _portalSecret;
 }
-const SECRET = new TextEncoder().encode(process.env.NEXTAUTH_SECRET);
 
 export interface PortalJwtPayload {
   sub: string; // portalAccount.id
@@ -29,7 +33,7 @@ export async function signPortalToken(payload: PortalJwtPayload): Promise<string
     .setProtectedHeader({ alg: "HS256" })
     .setIssuedAt()
     .setExpirationTime("30d")
-    .sign(SECRET);
+    .sign(getPortalSecret());
 }
 
 /**
@@ -38,7 +42,7 @@ export async function signPortalToken(payload: PortalJwtPayload): Promise<string
  */
 export async function verifyPortalToken(token: string): Promise<PortalJwtPayload | null> {
   try {
-    const { payload } = await jwtVerify(token, SECRET);
+    const { payload } = await jwtVerify(token, getPortalSecret());
     if (payload.scope !== "portal" || !payload.sub || !payload.customerId) return null;
     return {
       sub: payload.sub as string,
