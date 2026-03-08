@@ -1,4 +1,5 @@
 const { app, BrowserWindow, shell, dialog, ipcMain } = require("electron");
+const { autoUpdater } = require("electron-updater");
 const path = require("path");
 const fs = require("fs");
 const { spawn, execSync } = require("child_process");
@@ -258,6 +259,72 @@ ipcMain.handle("set-auto-start", (_, enabled) => {
   return enabled;
 });
 
+// ─── Auto-update ────────────────────────────────────────────────────────────
+function setupAutoUpdater() {
+  if (DEV_MODE) return;
+
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on("update-available", (info) => {
+    console.log(`[updater] Update available: v${info.version}`);
+    dialog
+      .showMessageBox(mainWindow, {
+        type: "info",
+        title: "Uppdatering tillgänglig",
+        message: `En ny version (v${info.version}) finns tillgänglig. Vill du ladda ner och installera den?`,
+        buttons: ["Ja, uppdatera", "Senare"],
+        defaultId: 0,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          autoUpdater.downloadUpdate();
+        }
+      });
+  });
+
+  autoUpdater.on("update-not-available", () => {
+    console.log("[updater] No update available");
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    console.log(`[updater] Download: ${Math.round(progress.percent)}%`);
+    if (mainWindow) {
+      mainWindow.setProgressBar(progress.percent / 100);
+    }
+  });
+
+  autoUpdater.on("update-downloaded", () => {
+    console.log("[updater] Update downloaded");
+    if (mainWindow) mainWindow.setProgressBar(-1);
+    dialog
+      .showMessageBox(mainWindow, {
+        type: "info",
+        title: "Uppdatering klar",
+        message: "Uppdateringen är nedladdad. Appen startas om för att installera.",
+        buttons: ["Starta om nu", "Senare"],
+        defaultId: 0,
+      })
+      .then(({ response }) => {
+        if (response === 0) {
+          autoUpdater.quitAndInstall();
+        }
+      });
+  });
+
+  autoUpdater.on("error", (err) => {
+    console.error("[updater] Error:", err.message);
+  });
+
+  // Check for updates 5 seconds after app is ready
+  setTimeout(() => {
+    console.log("[updater] Checking for updates...");
+    autoUpdater.checkForUpdates().catch((err) => {
+      console.error("[updater] Check failed:", err.message);
+    });
+  }, 5000);
+}
+
 // ─── App lifecycle ──────────────────────────────────────────────────────────
 app.whenReady().then(async () => {
   createWindow();
@@ -288,6 +355,9 @@ app.whenReady().then(async () => {
     if (mainWindow) {
       mainWindow.loadURL(`http://127.0.0.1:${NEXT_PORT}`);
     }
+
+    // Check for updates after app is loaded
+    setupAutoUpdater();
   } catch (err) {
     console.error("[electron] Startup failed:", err);
     if (mainWindow) {

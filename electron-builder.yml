@@ -40,6 +40,11 @@ extraResources:
   - from: ".env.local"
     to: "app/.env.local"
 
+publish:
+  provider: github
+  owner: Hampuzzz
+  repo: jmassist-releases
+
 afterPack: electron/afterPack.js
 
 win:
