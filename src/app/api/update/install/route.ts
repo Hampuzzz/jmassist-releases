@@ -6,7 +6,16 @@ const PROJECT_ROOT = process.cwd();
 
 export async function POST() {
   try {
-    // 1. Git pull latest code
+    // 1. Stash any local changes so pull doesn't fail
+    try {
+      execSync("git stash --include-untracked", {
+        cwd: PROJECT_ROOT,
+        encoding: "utf-8",
+        timeout: 10_000,
+      });
+    } catch {}
+
+    // 2. Git pull latest code
     const pullResult = execSync("git pull origin main", {
       cwd: PROJECT_ROOT,
       encoding: "utf-8",
@@ -25,14 +34,14 @@ export async function POST() {
       });
     }
 
-    // 2. Read new version from package.json
+    // 3. Read new version from package.json
     let newVersion = "?";
     try {
       delete require.cache[path.join(PROJECT_ROOT, "package.json")];
       newVersion = require(path.join(PROJECT_ROOT, "package.json")).version;
     } catch {}
 
-    // 3. Check if dependencies changed (package.json was in the pull)
+    // 4. Check if dependencies changed (package.json was in the pull)
     const needsInstall = pullResult.includes("package.json");
     if (needsInstall) {
       try {
