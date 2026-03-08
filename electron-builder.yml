@@ -1,0 +1,58 @@
+appId: se.jmassist.erp
+productName: JM Assist
+copyright: Copyright (c) 2026 JM Assist
+
+directories:
+  output: dist-electron
+  buildResources: electron/resources
+
+forceCodeSigning: false
+asar: true
+
+# Only include Electron main/preload files, NOT node_modules or Next.js source
+files:
+  - "electron/**/*"
+  - "!node_modules/**/*"
+  - "!src/**/*"
+  - "!supabase/**/*"
+  - "!.next/**/*"
+  - "!dist-electron/**/*"
+  - "!scripts/**/*"
+  - "!public/**/*"
+
+# The actual app goes into extraResources (standalone Next.js build)
+# IMPORTANT: static & public MUST go inside .next/standalone/ where server.js runs
+extraResources:
+  - from: ".next/standalone"
+    to: "app/.next/standalone"
+    filter:
+      - "**/*"
+  - from: ".next/static"
+    to: "app/.next/standalone/.next/static"
+    filter:
+      - "**/*"
+  - from: "public"
+    to: "app/.next/standalone/public"
+    filter:
+      - "**/*"
+  - from: "scripts/vehicle-lookup-service.mjs"
+    to: "app/scripts/vehicle-lookup-service.mjs"
+  - from: ".env.local"
+    to: "app/.env.local"
+
+afterPack: electron/afterPack.js
+
+win:
+  icon: electron/resources/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+  signAndEditExecutable: false
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: JM Assist

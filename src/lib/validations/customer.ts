@@ -1,0 +1,52 @@
+import { z } from "zod";
+
+export const createCustomerSchema = z.discriminatedUnion("isCompany", [
+  z.object({
+    isCompany:   z.literal(false),
+    firstName:   z.string().min(1).max(100),
+    lastName:    z.string().min(1).max(100).optional().nullable(),
+    personalNr:  z.string().max(20).optional().nullable(),
+    email:       z.string().email().optional().nullable(),
+    phone:       z.string().max(30).optional().nullable(),
+    phoneAlt:    z.string().max(30).optional().nullable(),
+    addressLine1: z.string().max(200).optional().nullable(),
+    postalCode:  z.string().max(10).optional().nullable(),
+    city:        z.string().max(100).optional().nullable(),
+    country:     z.string().length(2).default("SE"),
+    defaultPaymentTermsDays: z.number().int().min(0).max(365).default(30),
+    notes:       z.string().max(1000).optional().nullable(),
+  }),
+  z.object({
+    isCompany:   z.literal(true),
+    companyName: z.string().min(1).max(200),
+    orgNr:       z.string().min(1).max(20),
+    email:       z.string().email().optional().nullable(),
+    phone:       z.string().max(30).optional().nullable(),
+    phoneAlt:    z.string().max(30).optional().nullable(),
+    addressLine1: z.string().max(200).optional().nullable(),
+    postalCode:  z.string().max(10).optional().nullable(),
+    city:        z.string().max(100).optional().nullable(),
+    country:     z.string().length(2).default("SE"),
+    vatExempt:   z.boolean().default(false),
+    defaultPaymentTermsDays: z.number().int().min(0).max(365).default(30),
+    notes:       z.string().max(1000).optional().nullable(),
+  }),
+]);
+
+export const updateCustomerSchema = z.object({
+  isCompany:   z.boolean().optional(),
+  firstName:   z.string().max(100).optional().nullable(),
+  lastName:    z.string().max(100).optional().nullable(),
+  companyName: z.string().max(200).optional().nullable(),
+  orgNr:       z.string().max(20).optional().nullable(),
+  personalNr:  z.string().max(20).optional().nullable(),
+  email:       z.string().email().optional().nullable(),
+  phone:       z.string().max(30).optional().nullable(),
+  phoneAlt:    z.string().max(30).optional().nullable(),
+  addressLine1: z.string().max(200).optional().nullable(),
+  postalCode:  z.string().max(10).optional().nullable(),
+  city:        z.string().max(100).optional().nullable(),
+  notes:       z.string().max(1000).optional().nullable(),
+  defaultPaymentTermsDays: z.number().int().min(0).max(365).optional(),
+  vatExempt:   z.boolean().optional(),
+});

@@ -1,0 +1,82 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Next.js
+.next/
+out/
+build/
+
+# Environment variables
+.env
+.env.local
+.env.local.dev
+.env.bosgame
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Supabase local data (do NOT commit)
+supabase/.branches
+supabase/.temp
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Electron build output
+dist-electron/
+dist-installer/
+
+# Non-JMAssist files (other projects in this folder)
+adblox*
+adzentry*
+buildadblox*
+AdBloX*
+ytblock/
+tv-block/
+bin/
+tools/
+internal/
+deploy/
+SendToPartner/
+Versions/
+images/
+cmd/
+configs/
+server/
+services/
+data/
+go.mod
+go.sum
+Makefile
+make-package.ps1
+test.txt
+
+# Temp scripts (debugging/patching)
+*.js
+!src/**/*.js
+!electron/**/*.js
+!scripts/**/*.js
+!postcss.config.js
+nul
+latest.yml
+
+# Zip files
+*.zip
+
+# Patch packages
+_patch_for_bosgame/
+
+# Claude
+.claude/

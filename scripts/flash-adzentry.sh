@@ -1,0 +1,1 @@
+﻿/c/Users/Stahl/bash_completion.d/*.bash
