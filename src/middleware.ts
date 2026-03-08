@@ -4,6 +4,12 @@ import { createServerClient } from "@supabase/ssr";
 // Public API routes that don't require Supabase session (use API key instead)
 const PUBLIC_API_ROUTES = ["/api/availability", "/api/book"];
 
+// Portal CORS: configurable via env, defaults to Lovable app
+const PORTAL_CORS_ORIGINS = (process.env.PORTAL_CORS_ORIGIN ?? "https://jmtradinghampuz.lovable.app")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+
 // Dev bypass: skip auth when Supabase is not running
 const DEV_BYPASS = process.env.NODE_ENV === "development" && process.env.DEV_AUTH_BYPASS === "true";
 
@@ -39,15 +45,40 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Skip auth for portal API (uses own JWT auth)
+  // Portal API: CORS + skip Supabase auth (uses own JWT auth)
   if (pathname.startsWith("/api/portal/")) {
-    return NextResponse.next();
+    const origin = request.headers.get("origin") ?? "";
+    const isDev = process.env.NODE_ENV === "development";
+    const isAllowed = isDev || PORTAL_CORS_ORIGINS.includes(origin);
+    const corsOrigin = isAllowed ? origin : "";
+
+    // Preflight
+    if (request.method === "OPTIONS") {
+      return new NextResponse(null, {
+        status: 204,
+        headers: {
+          "Access-Control-Allow-Origin": corsOrigin,
+          "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+          "Access-Control-Allow-Headers": "Authorization, Content-Type",
+          "Access-Control-Max-Age": "86400",
+        },
+      });
+    }
+
+    // Actual request — attach CORS headers to response
+    const response = NextResponse.next();
+    if (corsOrigin) {
+      response.headers.set("Access-Control-Allow-Origin", corsOrigin);
+      response.headers.set("Access-Control-Allow-Headers", "Authorization, Content-Type");
+    }
+    return response;
   }
 
-  // Skip auth for auth callback, iCal, and public approval endpoints
+  // Skip auth for auth callback, iCal, update check, and public approval endpoints
   if (
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/api/kalender/ical") ||
+    pathname.startsWith("/api/update/") ||
     pathname.startsWith("/api/approval/") ||
     pathname.startsWith("/godkann/")
   ) {
