@@ -1,10 +1,12 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Wrench, Car, Users, Package, FileText, Calendar,
   LayoutDashboard, Settings, ChevronRight, TrendingUp, MessageSquare, Send,
+  ArrowUpCircle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -69,6 +71,20 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [latestVersion, setLatestVersion] = useState("");
+
+  useEffect(() => {
+    fetch("/api/update/check")
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.updateAvailable) {
+          setUpdateAvailable(true);
+          setLatestVersion(data.latestVersion);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   const topItems = navItems.filter((i) => !i.bottom);
   const bottomItems = navItems.filter((i) => i.bottom);
@@ -136,7 +152,17 @@ export function Sidebar() {
           );
         })}
         <div className="hidden md:block px-3 pt-2 text-xs text-workshop-muted/50">
-          v{process.env.NEXT_PUBLIC_APP_VERSION ?? "1.8.1"}
+          v{process.env.NEXT_PUBLIC_APP_VERSION ?? "1.8.2"}
+          {updateAvailable && (
+            <Link
+              href="/installningar"
+              className="flex items-center gap-1 mt-1 text-amber-400 hover:text-amber-300 transition-colors"
+              title={`v${latestVersion} tillgänglig`}
+            >
+              <ArrowUpCircle className="h-3 w-3" />
+              <span>v{latestVersion} tillgänglig</span>
+            </Link>
+          )}
         </div>
       </div>
     </aside>

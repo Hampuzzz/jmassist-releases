@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Clock, Wrench, Key, Calendar, Server } from "lucide-react";
 import { AutoStartToggle } from "@/components/installningar/AutoStartToggle";
+import { UpdateChecker } from "@/components/installningar/UpdateChecker";
 
 export const metadata = { title: "Inställningar" };
 
@@ -59,6 +60,9 @@ export default function InstallningarPage() {
           </Link>
         ))}
       </div>
+
+      {/* Check for updates */}
+      <UpdateChecker />
 
       {/* Auto-start toggle — only visible in Electron */}
       <AutoStartToggle />
