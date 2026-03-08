@@ -33,6 +33,7 @@ import { chromium } from "playwright";
 // ═══════════════════════════════════════════════════════════════════════════
 
 const CARINFO_COOKIE_FILE = path_module.join(process.cwd(), "data", "carinfo-cookies.json");
+const BILUPPGIFTER_COOKIE_FILE = path_module.join(process.cwd(), "data", "biluppgifter-cookies.json");
 
 function loadCarInfoCookies() {
   try {
@@ -1657,6 +1658,108 @@ const server = http.createServer(async (req, res) => {
     console.log("[car.info] 🔓 Block status manually reset.");
     res.writeHead(200);
     res.end(JSON.stringify({ status: "ok", message: "car.info unblocked" }));
+    return;
+  }
+
+  // ── biluppgifter.se status ──
+  if (path === "/biluppgifter-status") {
+    const hasCookies = fs.existsSync(BILUPPGIFTER_COOKIE_FILE);
+    let cookieAge = null;
+    let cfClearanceValid = false;
+    if (hasCookies) {
+      try {
+        const stat = fs.statSync(BILUPPGIFTER_COOKIE_FILE);
+        cookieAge = Math.round((Date.now() - stat.mtimeMs) / (1000 * 60 * 60));
+        // CF clearance is typically valid for ~15 min, but can last up to 30 min
+        cfClearanceValid = cookieAge < 1; // less than 1 hour old
+        const cookies = JSON.parse(fs.readFileSync(BILUPPGIFTER_COOKIE_FILE, "utf-8"));
+        const cfCookie = cookies.find(c => c.name === "cf_clearance");
+        if (cfCookie && cfCookie.expires) {
+          cfClearanceValid = cfCookie.expires * 1000 > Date.now();
+        }
+      } catch {}
+    }
+    res.writeHead(200);
+    res.end(JSON.stringify({
+      hasCookies,
+      cookieAgeHours: cookieAge,
+      cfClearanceValid,
+      blocked: biluppgifterBlocked > 0,
+    }));
+    return;
+  }
+
+  // ── biluppgifter.se login (opens visible browser for BankID login) ──
+  if (path === "/biluppgifter-login" && req.method === "POST") {
+    res.writeHead(200);
+    res.end(JSON.stringify({ status: "opening", message: "Öppnar biluppgifter.se för BankID-inloggning..." }));
+
+    (async () => {
+      let loginBrowser = null;
+      try {
+        console.log("[biluppgifter] 🔐 Opening visible browser for BankID login...");
+        const { chromium } = await import("playwright");
+        loginBrowser = await chromium.launch({
+          headless: false,
+          args: ["--start-maximized"],
+        });
+
+        const context = await loginBrowser.newContext({
+          viewport: { width: 1280, height: 900 },
+          locale: "sv-SE",
+        });
+        const page = await context.newPage();
+
+        await page.goto("https://biluppgifter.se/logga-in", {
+          waitUntil: "domcontentloaded",
+          timeout: 30_000,
+        });
+
+        console.log("[biluppgifter] 🔐 Waiting for BankID login (up to 5 minutes)...");
+
+        // Wait until user is logged in (URL changes or logged-in indicator appears)
+        try {
+          await page.waitForFunction(() => {
+            const url = window.location.href;
+            if (!url.includes("/logga-in") && !url.includes("/login")) return true;
+            const body = document.body?.innerText?.toLowerCase() ?? "";
+            if (body.includes("logga ut") || body.includes("mitt konto") || body.includes("mina sidor")) return true;
+            return false;
+          }, { timeout: 300_000 });
+        } catch {
+          console.log("[biluppgifter] ⏰ Login timeout (5 min) — closing browser.");
+          await loginBrowser.close().catch(() => {});
+          return;
+        }
+
+        // Grab cookies including cf_clearance
+        const cookies = await context.cookies();
+        console.log(`[biluppgifter] ✅ Login successful! Got ${cookies.length} cookies.`);
+
+        const cookieDir = path_module.dirname(BILUPPGIFTER_COOKIE_FILE);
+        if (!fs.existsSync(cookieDir)) fs.mkdirSync(cookieDir, { recursive: true });
+        fs.writeFileSync(BILUPPGIFTER_COOKIE_FILE, JSON.stringify(cookies, null, 2));
+        console.log(`[biluppgifter] 💾 Cookies saved to ${BILUPPGIFTER_COOKIE_FILE}`);
+
+        biluppgifterBlocked = 0;
+        console.log("[biluppgifter] ✅ biluppgifter.se unblocked and ready!");
+
+        await page.waitForTimeout(2000);
+        await loginBrowser.close().catch(() => {});
+      } catch (err) {
+        console.error("[biluppgifter] Login error:", err.message);
+        if (loginBrowser) await loginBrowser.close().catch(() => {});
+      }
+    })();
+    return;
+  }
+
+  // ── Reset biluppgifter block status ──
+  if (path === "/biluppgifter-unblock" && req.method === "POST") {
+    biluppgifterBlocked = 0;
+    console.log("[biluppgifter] 🔓 Block status manually reset.");
+    res.writeHead(200);
+    res.end(JSON.stringify({ status: "ok", message: "biluppgifter unblocked" }));
     return;
   }
 

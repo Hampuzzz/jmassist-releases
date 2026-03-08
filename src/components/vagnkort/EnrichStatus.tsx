@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Loader2, Sparkles, CheckCircle2, KeyRound, Wifi, WifiOff } from "lucide-react";
+import { Loader2, Sparkles, CheckCircle2, KeyRound, Wifi, WifiOff, Shield } from "lucide-react";
 import { useEnrichment } from "@/components/layout/EnrichmentProvider";
 
 type CarInfoStatus = {
@@ -10,6 +10,13 @@ type CarInfoStatus = {
   hasCookies: boolean;
   cookieAgeHours: number | null;
   sources?: { biluppgifter: string; carinfo: string };
+};
+
+type BiluppgifterStatus = {
+  hasCookies: boolean;
+  cookieAgeHours: number | null;
+  cfClearanceValid: boolean;
+  cfClearanceExpiresAt: string | null;
 };
 
 /**
@@ -22,16 +29,18 @@ export function EnrichStatus() {
   const { state, startEnrich } = useEnrichment();
   const [queueSize, setQueueSize] = useState<number | null>(null);
   const [carInfo, setCarInfo] = useState<CarInfoStatus | null>(null);
+  const [biluppgifter, setBiluppgifter] = useState<BiluppgifterStatus | null>(null);
   const [loginLoading, setLoginLoading] = useState(false);
   const [loginMsg, setLoginMsg] = useState("");
 
-  // Check queue size + car.info status on mount
+  // Check queue size + car.info status + biluppgifter status on mount
   useEffect(() => {
     (async () => {
       try {
-        const [enrichRes, ciRes] = await Promise.all([
+        const [enrichRes, ciRes, scraperRes] = await Promise.all([
           fetch("/api/vagnkort/enrich"),
           fetch("/api/vagnkort/carinfo-login"),
+          fetch("/api/scraper/status"),
         ]);
         if (enrichRes.ok) {
           const data = await enrichRes.json();
@@ -40,6 +49,10 @@ export function EnrichStatus() {
         if (ciRes.ok) {
           const data = await ciRes.json();
           setCarInfo(data);
+        }
+        if (scraperRes.ok) {
+          const data = await scraperRes.json();
+          if (data.biluppgifter) setBiluppgifter(data.biluppgifter);
         }
       } catch {
         // ignore
@@ -164,6 +177,7 @@ export function EnrichStatus() {
           )}
         </div>
         <CarInfoBar carInfo={carInfo} loginLoading={loginLoading} loginMsg={loginMsg} onLogin={handleCarInfoLogin} />
+        <BiluppgifterBar status={biluppgifter} />
       </div>
     );
   }
@@ -182,11 +196,12 @@ export function EnrichStatus() {
           </div>
         </div>
         <CarInfoBar carInfo={carInfo} loginLoading={loginLoading} loginMsg={loginMsg} onLogin={handleCarInfoLogin} />
+        <BiluppgifterBar status={biluppgifter} />
       </div>
     );
   }
 
-  // Idle — show queue size with start button + car.info status
+  // Idle — show queue size with start button + car.info status + biluppgifter status
   return (
     <div className="space-y-3">
       {(queueSize !== null && queueSize > 0) && (
@@ -209,6 +224,7 @@ export function EnrichStatus() {
         </div>
       )}
       <CarInfoBar carInfo={carInfo} loginLoading={loginLoading} loginMsg={loginMsg} onLogin={handleCarInfoLogin} />
+      <BiluppgifterBar status={biluppgifter} />
     </div>
   );
 }
@@ -277,6 +293,102 @@ function CarInfoBar({
               <KeyRound className="h-3 w-3" />
             )}
             {loginLoading ? "Väntar..." : "Logga in car.info"}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── biluppgifter.se status bar ── */
+function BiluppgifterBar({ status }: { status: BiluppgifterStatus | null }) {
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [localStatus, setLocalStatus] = useState(status);
+
+  // Sync prop → local
+  useEffect(() => { setLocalStatus(status); }, [status]);
+
+  if (!localStatus) return null;
+
+  const isOk = localStatus.hasCookies && localStatus.cfClearanceValid;
+  const expired = localStatus.hasCookies && !localStatus.cfClearanceValid;
+
+  const ageText = localStatus.cookieAgeHours !== null
+    ? localStatus.cookieAgeHours < 1 ? "nyss" : `${localStatus.cookieAgeHours}h sedan`
+    : null;
+
+  async function handleLogin() {
+    setLoading(true);
+    setMsg("");
+    try {
+      const res = await fetch("/api/vagnkort/biluppgifter-login", { method: "POST" });
+      const data = await res.json();
+      if (res.ok) {
+        setMsg("Webbläsare öppnad på MagicNUC — logga in med BankID!");
+        // Poll status every 10s
+        const poll = setInterval(async () => {
+          try {
+            const statusRes = await fetch("/api/vagnkort/biluppgifter-login");
+            if (statusRes.ok) {
+              const s = await statusRes.json();
+              setLocalStatus(s);
+              if (s.hasCookies && s.cfClearanceValid) {
+                setMsg("Inloggad på biluppgifter.se!");
+                setLoading(false);
+                clearInterval(poll);
+              }
+            }
+          } catch {}
+        }, 10_000);
+        setTimeout(() => { clearInterval(poll); setLoading(false); }, 300_000);
+      } else {
+        setMsg(data.error ?? "Kunde inte starta inloggning");
+        setLoading(false);
+      }
+    } catch {
+      setMsg("Nätverksfel — kör lookup-tjänsten?");
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className={`surface rounded-lg border p-3 ${
+      isOk ? "border-green-800/30" : "border-amber-800/30"
+    }`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2 min-w-0">
+          {isOk ? (
+            <Shield className="h-3.5 w-3.5 text-green-400 flex-shrink-0" />
+          ) : (
+            <Shield className="h-3.5 w-3.5 text-amber-400 flex-shrink-0" />
+          )}
+          <div className="min-w-0">
+            <p className={`text-xs font-medium ${isOk ? "text-green-400" : "text-amber-400"}`}>
+              biluppgifter.se: {isOk
+                ? `Ansluten${ageText ? ` (${ageText})` : ""}`
+                : expired
+                  ? "Cloudflare-session utgången"
+                  : "Ej inloggad"
+              }
+            </p>
+            {msg && (
+              <p className="text-[10px] text-workshop-muted mt-0.5">{msg}</p>
+            )}
+          </div>
+        </div>
+        {!isOk && (
+          <button
+            onClick={handleLogin}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900/30 hover:bg-blue-900/50 border border-blue-800 text-blue-300 rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0"
+          >
+            {loading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <KeyRound className="h-3 w-3" />
+            )}
+            {loading ? "Väntar på BankID..." : "Logga in (BankID)"}
           </button>
         )}
       </div>
