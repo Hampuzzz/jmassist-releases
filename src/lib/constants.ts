@@ -69,5 +69,7 @@ export const LINE_ITEM_TYPES = {
 export const SLOT_DURATION_MINUTES = 60;
 export const ICAL_TOKEN_EXPIRY_HOURS = 24 * 365;
 
-export const WORKSHOP_HOURLY_RATE = parseInt(process.env.WORKSHOP_HOURLY_RATE ?? "850");
+export const WORKSHOP_HOURLY_RATE_DEFAULT = 850;
+/** @deprecated Use getWorkshopHourlyRate() for dynamic DB-based rate */
+export const WORKSHOP_HOURLY_RATE = WORKSHOP_HOURLY_RATE_DEFAULT;
 export const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "JM Assist";

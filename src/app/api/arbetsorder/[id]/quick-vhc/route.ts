@@ -126,7 +126,13 @@ export async function POST(
       const message = vhcReportSms(customerName, vehicle?.regNr ?? "", checkupUrl);
 
       try {
-        await sendSms(customer.phone, message);
+        await sendSms(customer.phone, message, {
+          type: "vhc_report",
+          customerId: wo.customerId,
+          recipientName: customerName,
+          relatedEntityType: "vhc",
+          relatedEntityId: vhcId,
+        });
         smsSent = true;
       } catch (err: any) {
         return NextResponse.json(

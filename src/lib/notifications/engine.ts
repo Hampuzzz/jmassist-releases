@@ -26,6 +26,10 @@ export async function notifyStatusChange(
         orderNumber:  workOrders.orderNumber,
         vehicleRegNr: vehicles.regNr,
         customerPhone: customers.phone,
+        customerId:    customers.id,
+        customerFirst: customers.firstName,
+        customerLast:  customers.lastName,
+        customerCompany: customers.companyName,
       })
       .from(workOrders)
       .innerJoin(vehicles, eq(workOrders.vehicleId, vehicles.id))
@@ -37,8 +41,17 @@ export async function notifyStatusChange(
       return;
     }
 
+    const customerName = data.customerCompany ??
+      [data.customerFirst, data.customerLast].filter(Boolean).join(" ") ?? "";
+
     const message = statusUpdateSms(data.orderNumber, newStatus, data.vehicleRegNr);
-    await sendSms(data.customerPhone, message);
+    await sendSms(data.customerPhone, message, {
+      type: "status_update",
+      customerId: data.customerId,
+      recipientName: customerName,
+      relatedEntityType: "work_order",
+      relatedEntityId: workOrderId,
+    });
 
     console.log(`[notify] SMS sent for ${data.orderNumber} → ${newStatus}`);
   } catch (err) {
@@ -59,6 +72,7 @@ export async function notifyApprovalRequest(
       .select({
         vehicleRegNr:    vehicles.regNr,
         customerPhone:   customers.phone,
+        customerId:      customers.id,
         customerFirst:   customers.firstName,
         customerLast:    customers.lastName,
         customerCompany: customers.companyName,
@@ -77,7 +91,13 @@ export async function notifyApprovalRequest(
       [data.customerFirst, data.customerLast].filter(Boolean).join(" ") ?? "Kund";
 
     const message = approvalRequestSms(customerName, data.vehicleRegNr, approvalUrl);
-    await sendSms(data.customerPhone, message);
+    await sendSms(data.customerPhone, message, {
+      type: "approval_request",
+      customerId: data.customerId,
+      recipientName: customerName,
+      relatedEntityType: "work_order",
+      relatedEntityId: workOrderId,
+    });
 
     console.log(`[notify] Approval SMS sent for ${data.vehicleRegNr}`);
   } catch (err) {

@@ -4,17 +4,20 @@ import { db } from "@/lib/db";
 import {
   workOrders, workOrderTasks, workOrderParts,
   vehicles, customers, parts, approvalRequests,
-  vehicleHealthChecks, vhcItems,
+  vehicleHealthChecks, vhcItems, invoices,
 } from "@/lib/db/schemas";
 import { eq, asc, desc, and, sql } from "drizzle-orm";
 import { formatDate, formatDateTime, formatCurrency } from "@/lib/utils";
-import { WORK_ORDER_STATUSES, VALID_STATUS_TRANSITIONS, WORKSHOP_HOURLY_RATE } from "@/lib/constants";
+import { WORK_ORDER_STATUSES, VALID_STATUS_TRANSITIONS } from "@/lib/constants";
+import { getWorkshopHourlyRate } from "@/lib/workshop-rate";
 import { ArrowLeft, Stethoscope } from "lucide-react";
 import { WorkOrderDetail } from "@/components/arbetsorder/WorkOrderDetail";
 import { LineItemsSection } from "@/components/arbetsorder/LineItemsSection";
 import { AiDiagnosisButton } from "@/components/arbetsorder/AiDiagnosisButton";
 import { GenerateInvoiceButton } from "@/components/arbetsorder/GenerateInvoiceButton";
 import { QuickVideoButton } from "@/components/arbetsorder/QuickVideoButton";
+import { AddServiceTasksButton } from "@/components/arbetsorder/AddServiceTasksButton";
+import { PartsSearchPanel } from "@/components/arbetsorder/PartsSearchPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +31,7 @@ export default async function WorkOrderDetailPage({
   let tasks: any[] = [];
   let partsUsed: any[] = [];
   let approvals: any[] = [];
+  let quotes: { id: string; invoiceNumber: string | null }[] = [];
   let vhcData: { id: string; yellowCount: number; redCount: number; status: string } | null = null;
 
   try {
@@ -103,6 +107,19 @@ export default async function WorkOrderDetailPage({
         .where(eq(approvalRequests.workOrderId, params.id))
         .orderBy(desc(approvalRequests.createdAt));
 
+      // Fetch quotes linked to this work order
+      quotes = await db
+        .select({
+          id:            invoices.id,
+          invoiceNumber: invoices.invoiceNumber,
+        })
+        .from(invoices)
+        .where(and(
+          eq(invoices.workOrderId, params.id),
+          eq(invoices.type, "quote"),
+        ))
+        .orderBy(desc(invoices.createdAt));
+
       // Fetch VHC status if exists
       const [existingVhc] = await db
         .select({
@@ -138,9 +155,10 @@ export default async function WorkOrderDetailPage({
   if (!order) notFound();
 
   // Calculate totals
+  const workshopRate = await getWorkshopHourlyRate();
   const hourlyRate = order.laborRateOverride
     ? parseFloat(order.laborRateOverride)
-    : WORKSHOP_HOURLY_RATE;
+    : workshopRate;
 
   const totalLaborHours = tasks.reduce(
     (sum, t) => sum + (t.actualHours ? parseFloat(t.actualHours) : (t.estimatedHours ? parseFloat(t.estimatedHours) : 0)),
@@ -293,6 +311,14 @@ export default async function WorkOrderDetailPage({
           }
         />
 
+        <AddServiceTasksButton
+          workOrderId={order.id}
+          vehicleBrand={order.vehicleBrand}
+          vehicleModel={order.vehicleModel}
+          vehicleYear={order.vehicleYear}
+          vehicleMileage={order.mileageIn}
+        />
+
         <AiDiagnosisButton
           vehicleId={order.vehicleId}
           vehicleMake={order.vehicleBrand}
@@ -303,6 +329,16 @@ export default async function WorkOrderDetailPage({
         <GenerateInvoiceButton
           workOrderId={order.id}
           invoiceId={order.invoiceId}
+          quoteIds={quotes.map(q => ({ id: q.id, invoiceNumber: q.invoiceNumber ?? "Offert" }))}
+        />
+
+        <PartsSearchPanel
+          vehicle={{
+            regNr: order.vehicleRegNr,
+            brand: order.vehicleBrand,
+            model: order.vehicleModel,
+            year: order.vehicleYear,
+          }}
         />
       </div>
 

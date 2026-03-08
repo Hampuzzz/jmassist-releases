@@ -5,12 +5,14 @@ import {
   workOrders, workOrderTasks, workOrderParts,
   invoices, invoiceLines, parts,
 } from "@/lib/db/schemas";
-import { eq, asc, count } from "drizzle-orm";
-import { VAT_RATE, VMB_FACTOR, WORKSHOP_HOURLY_RATE } from "@/lib/constants";
+import { eq, and, asc, count } from "drizzle-orm";
+import { VAT_RATE, VMB_FACTOR } from "@/lib/constants";
+import { getWorkshopHourlyRate } from "@/lib/workshop-rate";
 
 /**
  * POST /api/arbetsorder/[id]/faktura
- * Generate a draft invoice from a work order's tasks and parts.
+ * Generate a draft invoice OR quote from a work order's tasks and parts.
+ * Body: { type?: "invoice" | "quote" } — default "invoice"
  */
 export async function POST(
   request: NextRequest,
@@ -23,6 +25,17 @@ export async function POST(
   }
 
   const workOrderId = params.id;
+
+  // Parse type from request body (default "invoice")
+  let docType: "invoice" | "quote" = "invoice";
+  try {
+    const body = await request.json();
+    if (body?.type === "quote") docType = "quote";
+  } catch {
+    // No body or invalid JSON — default to invoice
+  }
+
+  const isQuote = docType === "quote";
 
   try {
     // 1. Fetch work order
@@ -41,8 +54,8 @@ export async function POST(
       return NextResponse.json({ error: "Arbetsorder hittades inte" }, { status: 404 });
     }
 
-    // 2. Check if invoice already exists
-    if (order.invoiceId) {
+    // 2. For invoices: check if one already exists. Quotes allow multiples.
+    if (!isQuote && order.invoiceId) {
       return NextResponse.json(
         { error: "Faktura finns redan", invoiceId: order.invoiceId },
         { status: 409 },
@@ -80,9 +93,10 @@ export async function POST(
       .where(eq(workOrderParts.workOrderId, workOrderId));
 
     // 5. Build invoice lines
+    const workshopRate = await getWorkshopHourlyRate();
     const hourlyRate = order.laborRateOverride
       ? parseFloat(order.laborRateOverride)
-      : WORKSHOP_HOURLY_RATE;
+      : workshopRate;
 
     let subtotalExVat = 0;
     let vatAmount = 0;
@@ -154,12 +168,14 @@ export async function POST(
 
     const totalIncVat = subtotalExVat + vatAmount + vmbVatAmount;
 
-    // 6. Generate invoice number
+    // 6. Generate number (separate series for quotes and invoices)
+    const prefix = isQuote ? "OFF" : "FAK";
     const [countRow] = await db
       .select({ total: count(invoices.id) })
-      .from(invoices);
+      .from(invoices)
+      .where(eq(invoices.type, docType));
     const seq = (countRow?.total ?? 0) + 1;
-    const invoiceNumber = `FAK-${String(seq).padStart(4, "0")}`;
+    const invoiceNumber = `${prefix}-${String(seq).padStart(4, "0")}`;
 
     // 7. Calculate dates
     const now = new Date();
@@ -169,23 +185,23 @@ export async function POST(
       .toISOString()
       .split("T")[0];
 
-    // 8. Insert invoice
+    // 8. Insert invoice/quote
     const [invoice] = await db
       .insert(invoices)
       .values({
-        type: "invoice",
+        type: docType,
         status: "draft",
         invoiceNumber,
         customerId: order.customerId,
         workOrderId,
-        paymentTermsDays,
+        paymentTermsDays: isQuote ? undefined : paymentTermsDays,
         invoiceDate,
-        dueDate,
+        dueDate: isQuote ? undefined : dueDate,
         subtotalExVat: subtotalExVat.toFixed(4),
         vatAmount: vatAmount.toFixed(4),
         vmbVatAmount: vmbVatAmount.toFixed(4),
         totalIncVat: totalIncVat.toFixed(4),
-        notes: `Genererad från arbetsorder ${order.orderNumber}`,
+        notes: `${isQuote ? "Offert" : "Faktura"} genererad från arbetsorder ${order.orderNumber}`,
         createdBy: user.id,
       })
       .returning();
@@ -195,11 +211,13 @@ export async function POST(
       allLines.map((l) => ({ ...l, invoiceId: invoice.id })),
     );
 
-    // 10. Link invoice to work order
-    await db
-      .update(workOrders)
-      .set({ invoiceId: invoice.id, updatedAt: new Date() })
-      .where(eq(workOrders.id, workOrderId));
+    // 10. Link invoice to work order (only for invoices, not quotes)
+    if (!isQuote) {
+      await db
+        .update(workOrders)
+        .set({ invoiceId: invoice.id, updatedAt: new Date() })
+        .where(eq(workOrders.id, workOrderId));
+    }
 
     return NextResponse.json(
       { invoiceId: invoice.id, invoiceNumber },

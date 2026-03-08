@@ -4,9 +4,11 @@ import { db } from "@/lib/db";
 import {
   workOrderTasks, workOrders, userProfiles,
   invoices, invoiceLines, parts, stockMovements,
+  timeEntries,
 } from "@/lib/db/schemas";
-import { eq, and, gte, lte, ne, sql } from "drizzle-orm";
-import { WORKSHOP_HOURLY_RATE } from "@/lib/constants";
+import { eq, and, or, gte, lte, ne, sql } from "drizzle-orm";
+import { getWorkshopHourlyRate } from "@/lib/workshop-rate";
+import { getCached, setCache } from "@/lib/cache/server-cache";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +20,13 @@ export async function GET() {
   const supabase = createServerClient();
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Check cache first (60 second TTL)
+  const CACHE_KEY = "dashboard-stats";
+  const cached = getCached<object>(CACHE_KEY);
+  if (cached) {
+    return NextResponse.json(cached);
+  }
 
   // Date ranges
   const now = new Date();
@@ -42,6 +51,7 @@ export async function GET() {
       totalLaborRevenueResult,
       mechanicHoursResult,
       mechanicRevenueResult,
+      clockedHoursResult,
       // B: Inventory
       inventorySummaryResult,
       agedPartsResult,
@@ -96,7 +106,7 @@ export async function GET() {
             eq(workOrderTasks.isCompleted, true),
             gte(workOrderTasks.completedAt, new Date(monthStart)),
             lte(workOrderTasks.completedAt, new Date(`${monthEnd}T23:59:59`)),
-            eq(userProfiles.role, "mechanic"),
+            or(eq(userProfiles.role, "mechanic"), eq(userProfiles.role, "allround")),
             eq(userProfiles.isActive, true),
           ),
         )
@@ -123,6 +133,22 @@ export async function GET() {
           ),
         )
         .groupBy(workOrderTasks.assignedTo),
+
+      // A5: Clocked hours (from time_entries, stopped this month)
+      db.select({
+        clockedHours: sql<string>`COALESCE(SUM(
+          EXTRACT(EPOCH FROM (${timeEntries.stoppedAt} - ${timeEntries.startedAt})) / 3600.0
+          - ${timeEntries.totalPausedSeconds}::numeric / 3600.0
+        ), 0)`,
+      })
+        .from(timeEntries)
+        .where(
+          and(
+            sql`${timeEntries.stoppedAt} IS NOT NULL`,
+            gte(timeEntries.stoppedAt, new Date(monthStart)),
+            lte(timeEntries.stoppedAt, new Date(`${monthEnd}T23:59:59`)),
+          ),
+        ),
 
       // B1: Inventory summary
       db.select({
@@ -214,6 +240,7 @@ export async function GET() {
 
     // Parse efficiency
     const totalBilledHours = parseFloat(totalHoursResult[0]?.totalHours ?? "0");
+    const totalClockedHours = parseFloat(clockedHoursResult[0]?.clockedHours ?? "0");
     const totalLaborRevenue = parseFloat(totalLaborRevenueResult[0]?.laborRevenue ?? "0");
     const effectiveRate = totalBilledHours > 0 ? totalLaborRevenue / totalBilledHours : 0;
 
@@ -266,12 +293,13 @@ export async function GET() {
 
     const grossMarginPct = revenue > 0 ? ((revenue - partsCost) / revenue) * 100 : 0;
 
-    return NextResponse.json({
+    const result = {
       efficiency: {
         totalBilledHours,
+        totalClockedHours,
         totalLaborRevenue,
         effectiveRate,
-        targetRate: WORKSHOP_HOURLY_RATE,
+        targetRate: await getWorkshopHourlyRate(),
         mechanics,
       },
       inventory: {
@@ -288,7 +316,12 @@ export async function GET() {
         grossMarginPct,
         partsCost,
       },
-    });
+    };
+
+    // Cache for 60 seconds
+    setCache(CACHE_KEY, result, 60_000);
+
+    return NextResponse.json(result);
   } catch (err: any) {
     console.error("[dashboard/stats] Failed:", err);
     return NextResponse.json(

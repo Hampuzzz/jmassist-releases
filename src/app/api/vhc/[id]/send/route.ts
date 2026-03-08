@@ -60,7 +60,13 @@ export async function POST(
   const message = vhcReportSms(customerName, vehicle.regNr, checkupUrl);
 
   try {
-    await sendSms(customer.phone, message);
+    await sendSms(customer.phone, message, {
+      type: "vhc_report",
+      customerId: vehicle.customerId,
+      recipientName: customerName,
+      relatedEntityType: "vhc",
+      relatedEntityId: vhc.id,
+    });
   } catch (err: any) {
     return NextResponse.json(
       { error: `SMS-fel: ${err.message}`, checkupUrl },

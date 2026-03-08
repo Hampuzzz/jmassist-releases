@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Wrench, Car, Users, Package, FileText, Calendar,
-  LayoutDashboard, Settings, ChevronRight, TrendingUp, MessageSquare,
+  LayoutDashboard, Settings, ChevronRight, TrendingUp, MessageSquare, Send,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -53,6 +53,11 @@ const navItems = [
     href:  "/crm",
     icon:  MessageSquare,
     label: "CRM",
+  },
+  {
+    href:  "/meddelanden",
+    icon:  Send,
+    label: "Meddelanden",
   },
   {
     href:  "/installningar",
@@ -131,7 +136,7 @@ export function Sidebar() {
           );
         })}
         <div className="hidden md:block px-3 pt-2 text-xs text-workshop-muted/50">
-          v1.3
+          v{process.env.NEXT_PUBLIC_APP_VERSION ?? "1.6.1"}
         </div>
       </div>
     </aside>

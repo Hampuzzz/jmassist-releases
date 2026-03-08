@@ -17,3 +17,13 @@ export * from "./crm-reminders";
 export * from "./part-price-searches";
 export * from "./media";
 export * from "./purchase-orders";
+// v2.0.0 – local auth (replaces Supabase Auth)
+export * from "./auth-accounts";
+// v2.5.0
+export * from "./time-entries";
+export * from "./workshop-settings";
+export * from "./loan-cars";
+// v1.6.0
+export * from "./service-templates";
+// v1.8.0
+export * from "./message-logs";

@@ -1,3 +1,5 @@
+import { db } from "@/lib/db";
+import { messageLogs } from "@/lib/db/schemas";
 import type { SmsResponse } from "./types";
 
 // ─── Configuration ─────────────────────────────────────────────────────────
@@ -32,13 +34,23 @@ export function formatPhoneE164(phone: string): string | null {
   return null; // Can't parse
 }
 
+export type SmsLogContext = {
+  type?: string;
+  customerId?: string;
+  recipientName?: string;
+  relatedEntityType?: string;
+  relatedEntityId?: string;
+};
+
 /**
  * Send an SMS via 46elks.
  * Returns the SMS response or null if in mock mode.
+ * Always logs the message to the message_logs table.
  */
 export async function sendSms(
   to: string,
   message: string,
+  context?: SmsLogContext,
 ): Promise<SmsResponse | null> {
   const formattedTo = formatPhoneE164(to);
   if (!formattedTo) {
@@ -50,6 +62,24 @@ export async function sendSms(
     console.log(`[sms:mock] To: ${formattedTo}`);
     console.log(`[sms:mock] Message: ${message}`);
     console.log(`[sms:mock] From: ${SENDER}`);
+
+    // Log mock SMS
+    try {
+      await db.insert(messageLogs).values({
+        channel: "sms",
+        type: context?.type ?? "manual",
+        recipientPhone: formattedTo,
+        recipientName: context?.recipientName ?? null,
+        customerId: context?.customerId ?? null,
+        message,
+        status: "mock",
+        relatedEntityType: context?.relatedEntityType ?? null,
+        relatedEntityId: context?.relatedEntityId ?? null,
+      });
+    } catch (logErr) {
+      console.error("[sms] Failed to log mock SMS:", logErr);
+    }
+
     return null;
   }
 
@@ -59,20 +89,84 @@ export async function sendSms(
     message,
   });
 
-  const res = await fetch(API_URL, {
-    method: "POST",
-    headers: {
-      "Authorization": `Basic ${Buffer.from(`${API_USERNAME}:${API_PASSWORD}`).toString("base64")}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  });
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: {
+        "Authorization": `Basic ${Buffer.from(`${API_USERNAME}:${API_PASSWORD}`).toString("base64")}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
 
-  if (!res.ok) {
-    const errText = await res.text();
-    console.error(`[sms] 46elks API error (${res.status}):`, errText);
-    throw new Error(`SMS-fel: ${res.status} ${errText}`);
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`[sms] 46elks API error (${res.status}):`, errText);
+
+      // Log failed SMS
+      try {
+        await db.insert(messageLogs).values({
+          channel: "sms",
+          type: context?.type ?? "manual",
+          recipientPhone: formattedTo,
+          recipientName: context?.recipientName ?? null,
+          customerId: context?.customerId ?? null,
+          message,
+          status: "failed",
+          errorMessage: `${res.status}: ${errText}`,
+          relatedEntityType: context?.relatedEntityType ?? null,
+          relatedEntityId: context?.relatedEntityId ?? null,
+        });
+      } catch (logErr) {
+        console.error("[sms] Failed to log failed SMS:", logErr);
+      }
+
+      throw new Error(`SMS-fel: ${res.status} ${errText}`);
+    }
+
+    const smsResponse = (await res.json()) as SmsResponse;
+
+    // Log successful SMS
+    try {
+      await db.insert(messageLogs).values({
+        channel: "sms",
+        type: context?.type ?? "manual",
+        recipientPhone: formattedTo,
+        recipientName: context?.recipientName ?? null,
+        customerId: context?.customerId ?? null,
+        message,
+        status: "sent",
+        externalId: smsResponse.id,
+        costSek: smsResponse.cost,
+        relatedEntityType: context?.relatedEntityType ?? null,
+        relatedEntityId: context?.relatedEntityId ?? null,
+      });
+    } catch (logErr) {
+      console.error("[sms] Failed to log sent SMS:", logErr);
+    }
+
+    return smsResponse;
+  } catch (err) {
+    if ((err as Error).message.startsWith("SMS-fel:")) throw err;
+
+    // Log network error
+    try {
+      await db.insert(messageLogs).values({
+        channel: "sms",
+        type: context?.type ?? "manual",
+        recipientPhone: formattedTo,
+        recipientName: context?.recipientName ?? null,
+        customerId: context?.customerId ?? null,
+        message,
+        status: "failed",
+        errorMessage: (err as Error).message,
+        relatedEntityType: context?.relatedEntityType ?? null,
+        relatedEntityId: context?.relatedEntityId ?? null,
+      });
+    } catch (logErr) {
+      console.error("[sms] Failed to log error SMS:", logErr);
+    }
+
+    throw err;
   }
-
-  return (await res.json()) as SmsResponse;
 }
