@@ -1,7 +1,19 @@
 import { NextResponse } from "next/server";
+import fs from "fs";
+import path from "path";
 
 const GITHUB_REPO = "Hampuzzz/jmassist-releases";
-const CURRENT_VERSION = process.env.NEXT_PUBLIC_APP_VERSION ?? require("../../../../../package.json").version;
+
+/** Read version from package.json (fresh from disk, not cached) */
+function getCurrentVersion(): string {
+  try {
+    const pkgPath = path.join(process.cwd(), "package.json");
+    const raw = fs.readFileSync(pkgPath, "utf-8");
+    return JSON.parse(raw).version ?? "0.0.0";
+  } catch {
+    return process.env.NEXT_PUBLIC_APP_VERSION ?? "0.0.0";
+  }
+}
 
 function parseVersion(tag: string): number[] {
   return tag.replace(/^v/, "").split(".").map(Number);
@@ -21,6 +33,8 @@ function isNewer(remote: string, local: string): boolean {
 
 export async function GET() {
   try {
+    const currentVersion = getCurrentVersion();
+
     const res = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/tags?per_page=5`,
       {
@@ -40,8 +54,8 @@ export async function GET() {
 
     if (!tags.length) {
       return NextResponse.json({
-        currentVersion: CURRENT_VERSION,
-        latestVersion: CURRENT_VERSION,
+        currentVersion,
+        latestVersion: currentVersion,
         updateAvailable: false,
       });
     }
@@ -60,12 +74,12 @@ export async function GET() {
         return 0;
       });
 
-    const latestTag = sorted[0] ?? `v${CURRENT_VERSION}`;
+    const latestTag = sorted[0] ?? `v${currentVersion}`;
     const latestVersion = latestTag.replace(/^v/, "");
-    const updateAvailable = isNewer(latestVersion, CURRENT_VERSION);
+    const updateAvailable = isNewer(latestVersion, currentVersion);
 
     return NextResponse.json({
-      currentVersion: CURRENT_VERSION,
+      currentVersion,
       latestVersion,
       latestTag,
       updateAvailable,
