@@ -15,6 +15,7 @@ app.commandLine.appendSwitch("js-flags", "--max-old-space-size=512");
 const DEV_MODE = !app.isPackaged;
 const NEXT_PORT = 3000;
 const LOOKUP_PORT = 8100;
+const APP_VERSION = require(path.join(__dirname, "..", "package.json")).version;
 const PROJECT_ROOT = DEV_MODE
   ? path.resolve(__dirname, "..")
   : path.resolve(process.resourcesPath, "app");
@@ -212,7 +213,7 @@ function createWindow() {
     height: 900,
     minWidth: 1024,
     minHeight: 700,
-    title: "JM Assist v1.5",
+    title: `JM Assist v${APP_VERSION}`,
     icon: iconPath,
     autoHideMenuBar: true,
     show: false,
