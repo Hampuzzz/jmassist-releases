@@ -73,11 +73,15 @@ export function Sidebar() {
   const pathname = usePathname();
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [latestVersion, setLatestVersion] = useState("");
+  const [currentVersion, setCurrentVersion] = useState(
+    process.env.NEXT_PUBLIC_APP_VERSION ?? "1.8.5",
+  );
 
   useEffect(() => {
     fetch("/api/update/check")
       .then((r) => r.json())
       .then((data) => {
+        if (data.currentVersion) setCurrentVersion(data.currentVersion);
         if (data.updateAvailable) {
           setUpdateAvailable(true);
           setLatestVersion(data.latestVersion);
@@ -152,7 +156,7 @@ export function Sidebar() {
           );
         })}
         <div className="hidden md:block px-3 pt-2 text-xs text-workshop-muted/50">
-          v{process.env.NEXT_PUBLIC_APP_VERSION ?? "1.8.5"}
+          v{currentVersion}
           {updateAvailable && (
             <Link
               href="/installningar"
