@@ -325,7 +325,7 @@ function BiluppgifterBar({ status }: { status: BiluppgifterStatus | null }) {
       const res = await fetch("/api/vagnkort/biluppgifter-login", { method: "POST" });
       const data = await res.json();
       if (res.ok) {
-        setMsg("Webbläsare öppnad på MagicNUC — logga in med BankID!");
+        setMsg("Webbläsare öppnad — logga in med BankID i fönstret på servern (MagicNUC)");
         // Poll status every 10s
         const poll = setInterval(async () => {
           try {
