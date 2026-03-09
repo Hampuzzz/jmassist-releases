@@ -90,6 +90,7 @@ function NyFordonPageContent() {
   const [driveType, setDriveType] = useState("");
   const [engineSizeCc, setEngineSizeCc] = useState("");
   const [powerKw, setPowerKw] = useState("");
+  const [engineCode, setEngineCode] = useState("");
   const [vin, setVin] = useState("");
   const [mileageKm, setMileageKm] = useState("");
   const [notes, setNotes] = useState("");
@@ -154,6 +155,8 @@ function NyFordonPageContent() {
         setDriveType(mapDrive(v.driveType));
         if (v.engineSizeCc || v.engineSizeCC) setEngineSizeCc((v.engineSizeCc ?? v.engineSizeCC ?? "").toString());
         if (v.powerKw) setPowerKw(v.powerKw.toString());
+        if (v.engineCode) setEngineCode(v.engineCode);
+        if (v.mileageKm) setMileageKm(v.mileageKm.toString());
 
         const sourceLabel = data.source === "local_db" ? "lokal databas"
           : data.source?.includes("scraper") || data.source?.includes("car.info") || data.source?.includes("biluppgifter") ? "biluppgifter"
@@ -204,6 +207,8 @@ function NyFordonPageContent() {
               setDriveType(mapDrive(v.driveType));
               if (v.engineSizeCc || v.engineSizeCC) setEngineSizeCc((v.engineSizeCc ?? v.engineSizeCC ?? "").toString());
               if (v.powerKw) setPowerKw(v.powerKw.toString());
+              if (v.engineCode) setEngineCode(v.engineCode);
+              if (v.mileageKm) setMileageKm(v.mileageKm.toString());
               const sourceLabel = data.source === "local_db" ? "lokal databas"
                 : data.source?.includes("scraper") || data.source?.includes("car.info") || data.source?.includes("biluppgifter") ? "biluppgifter"
                 : "extern sökning";
@@ -241,6 +246,7 @@ function NyFordonPageContent() {
       driveType: driveType || null,
       engineSizeCc: engineSizeCc ? parseInt(engineSizeCc) : null,
       powerKw: powerKw ? parseInt(powerKw) : null,
+      engineCode: engineCode || null,
       vin: vin || null,
       mileageKm: mileageKm ? parseInt(mileageKm) : null,
       notes: notes || null,
@@ -477,6 +483,10 @@ function NyFordonPageContent() {
             <div>
               <label className="block text-xs text-workshop-muted mb-1">Effekt (kW)</label>
               <input type="number" value={powerKw} onChange={(e) => setPowerKw(e.target.value)} placeholder="140" className={inputCls} />
+            </div>
+            <div>
+              <label className="block text-xs text-workshop-muted mb-1">Motorkod</label>
+              <input type="text" value={engineCode} onChange={(e) => setEngineCode(e.target.value.toUpperCase())} placeholder="N47D20" maxLength={30} className={`${inputCls} font-mono`} />
             </div>
             <div>
               <label className="block text-xs text-workshop-muted mb-1">Miltal (km)</label>

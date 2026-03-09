@@ -46,6 +46,17 @@ function loadCarInfoCookies() {
   return null;
 }
 
+function loadBiluppgifterCookies() {
+  try {
+    if (fs.existsSync(BILUPPGIFTER_COOKIE_FILE)) {
+      const cookies = JSON.parse(fs.readFileSync(BILUPPGIFTER_COOKIE_FILE, "utf-8"));
+      console.log(`[cookies] Loaded ${cookies.length} biluppgifter cookies`);
+      return cookies;
+    }
+  } catch { /* no cookies */ }
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // Configuration
 // ═══════════════════════════════════════════════════════════════════════════
@@ -434,6 +445,17 @@ async function scrapeBiluppgifter(regNr) {
       "Accept-Language": "sv-SE,sv;q=0.9,en;q=0.8",
     },
   });
+
+  // Load saved login cookies (BankID session) if available
+  const savedCookies = loadBiluppgifterCookies();
+  if (savedCookies) {
+    try {
+      await context.addCookies(savedCookies);
+      console.log("[biluppgifter] 🔑 Using saved login cookies");
+    } catch (e) {
+      console.log("[biluppgifter] ⚠️ Failed to load cookies:", e.message);
+    }
+  }
 
   const page = await context.newPage();
   const capturedJsons = [];
@@ -1666,16 +1688,29 @@ const server = http.createServer(async (req, res) => {
     const hasCookies = fs.existsSync(BILUPPGIFTER_COOKIE_FILE);
     let cookieAge = null;
     let cfClearanceValid = false;
+    let authenticated = false;
     if (hasCookies) {
       try {
         const stat = fs.statSync(BILUPPGIFTER_COOKIE_FILE);
         cookieAge = Math.round((Date.now() - stat.mtimeMs) / (1000 * 60 * 60));
-        // CF clearance is typically valid for ~15 min, but can last up to 30 min
-        cfClearanceValid = cookieAge < 1; // less than 1 hour old
         const cookies = JSON.parse(fs.readFileSync(BILUPPGIFTER_COOKIE_FILE, "utf-8"));
+        // Check cf_clearance specifically
         const cfCookie = cookies.find(c => c.name === "cf_clearance");
-        if (cfCookie && cfCookie.expires) {
+        if (cfCookie && cfCookie.expires && cfCookie.expires > 0) {
           cfClearanceValid = cfCookie.expires * 1000 > Date.now();
+        }
+        // Check for any auth/session cookies (BankID login)
+        // If cookies were recently imported (< 24h) and contain session data, consider authenticated
+        const hasSessionCookies = cookies.some(c =>
+          c.name.includes("session") || c.name.includes("SESS") ||
+          c.name.includes("token") || c.name.includes("auth") ||
+          c.name.includes("laravel") || c.name.includes("biluppgifter")
+        );
+        authenticated = hasSessionCookies || (cookieAge !== null && cookieAge < 24);
+        // If authenticated but no cf_clearance, still report as valid
+        // The scraper's Playwright will handle Cloudflare challenges itself
+        if (authenticated && !cfClearanceValid) {
+          cfClearanceValid = true;
         }
       } catch {}
     }
@@ -1684,6 +1719,7 @@ const server = http.createServer(async (req, res) => {
       hasCookies,
       cookieAgeHours: cookieAge,
       cfClearanceValid,
+      authenticated,
       blocked: biluppgifterBlocked > 0,
     }));
     return;
@@ -1710,7 +1746,7 @@ const server = http.createServer(async (req, res) => {
         });
         const page = await context.newPage();
 
-        await page.goto("https://biluppgifter.se/logga-in", {
+        await page.goto("https://biluppgifter.se/medlem/logga-in/", {
           waitUntil: "domcontentloaded",
           timeout: 30_000,
         });
@@ -1760,6 +1796,60 @@ const server = http.createServer(async (req, res) => {
     console.log("[biluppgifter] 🔓 Block status manually reset.");
     res.writeHead(200);
     res.end(JSON.stringify({ status: "ok", message: "biluppgifter unblocked" }));
+    return;
+  }
+
+  // ── Import car.info cookies (sent from Electron login window) ──
+  if (path === "/import-carinfo-cookies" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const { cookies } = JSON.parse(body);
+        if (!Array.isArray(cookies) || cookies.length === 0) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "No cookies provided" }));
+          return;
+        }
+        const cookieDir = path_module.dirname(CARINFO_COOKIE_FILE);
+        if (!fs.existsSync(cookieDir)) fs.mkdirSync(cookieDir, { recursive: true });
+        fs.writeFileSync(CARINFO_COOKIE_FILE, JSON.stringify(cookies, null, 2));
+        carInfoBlocked = 0;
+        console.log(`[car.info] 💾 Imported ${cookies.length} cookies from Electron login window.`);
+        res.writeHead(200);
+        res.end(JSON.stringify({ status: "ok", imported: cookies.length }));
+      } catch (err) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid JSON: " + err.message }));
+      }
+    });
+    return;
+  }
+
+  // ── Import biluppgifter.se cookies (sent from Electron login window) ──
+  if (path === "/import-biluppgifter-cookies" && req.method === "POST") {
+    let body = "";
+    req.on("data", (chunk) => { body += chunk; });
+    req.on("end", () => {
+      try {
+        const { cookies } = JSON.parse(body);
+        if (!Array.isArray(cookies) || cookies.length === 0) {
+          res.writeHead(400);
+          res.end(JSON.stringify({ error: "No cookies provided" }));
+          return;
+        }
+        const cookieDir = path_module.dirname(BILUPPGIFTER_COOKIE_FILE);
+        if (!fs.existsSync(cookieDir)) fs.mkdirSync(cookieDir, { recursive: true });
+        fs.writeFileSync(BILUPPGIFTER_COOKIE_FILE, JSON.stringify(cookies, null, 2));
+        biluppgifterBlocked = 0;
+        console.log(`[biluppgifter] 💾 Imported ${cookies.length} cookies from Electron login window.`);
+        res.writeHead(200);
+        res.end(JSON.stringify({ status: "ok", imported: cookies.length }));
+      } catch (err) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: "Invalid JSON: " + err.message }));
+      }
+    });
     return;
   }
 

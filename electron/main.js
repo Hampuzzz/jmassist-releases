@@ -260,6 +260,149 @@ ipcMain.handle("set-auto-start", (_, enabled) => {
   return enabled;
 });
 
+// ─── Login window IPC handler ───────────────────────────────────────────────
+// Opens a BrowserWindow on the user's PC for car.info / biluppgifter login.
+// After successful login, extracts cookies and returns them so they can be
+// forwarded to MagicNUC where the scraper runs.
+ipcMain.handle("open-login-window", async (_event, { url, site }) => {
+  const { session: electronSession } = require("electron");
+  const partition = `persist:login-${site}`;
+
+  return new Promise((resolve) => {
+    const loginWin = new BrowserWindow({
+      width: 1300,
+      height: 920,
+      title: `Logga in — ${site}`,
+      icon: getIconPath(),
+      parent: mainWindow,
+      autoHideMenuBar: true,
+      backgroundColor: "#f5f5f5",
+      webPreferences: {
+        partition,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    loginWin.setMenu(null);
+
+    const loginSession = electronSession.fromPartition(partition);
+    loginWin.loadURL(url);
+
+    let resolved = false;
+    const TIMEOUT_MS = 300_000; // 5 minutes
+
+    async function extractAndResolve(reason) {
+      if (resolved) return;
+      resolved = true;
+      try {
+        // Get all cookies from the login session
+        const allCookies = await loginSession.cookies.get({});
+        // Filter for relevant domains
+        const siteDomain = site === "car.info" ? "car.info" : "biluppgifter";
+        const relevant = allCookies.filter((c) =>
+          c.domain.toLowerCase().includes(siteDomain)
+        );
+        // Convert to Playwright-compatible format
+        const playwrightCookies = relevant.map((c) => ({
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path || "/",
+          httpOnly: !!c.httpOnly,
+          secure: !!c.secure,
+          sameSite: c.sameSite === "no_restriction" ? "None"
+                  : c.sameSite === "lax" ? "Lax"
+                  : c.sameSite === "strict" ? "Strict"
+                  : "Lax",
+          expires: c.expirationDate || -1,
+        }));
+        // Get the user-agent from the login window (needed for cf_clearance matching)
+        const loginUA = loginWin.webContents.getUserAgent();
+        console.log(`[login-window] ${reason}: Got ${playwrightCookies.length} cookies for ${site}, UA: ${loginUA.slice(0, 60)}...`);
+        resolve({ success: playwrightCookies.length > 0, cookies: playwrightCookies, userAgent: loginUA });
+      } catch (err) {
+        console.error(`[login-window] Cookie extraction error: ${err.message}`);
+        resolve({ success: false, cookies: [] });
+      }
+      try { loginWin.close(); } catch {}
+    }
+
+    // Detect successful login via URL change
+    function checkUrl(newUrl) {
+      if (resolved) return;
+      const u = newUrl.toLowerCase();
+      const isLogin = u.includes("/login") || u.includes("/logga-in") || u.includes("/sign-in") || u.includes("/user/login");
+      if (!isLogin && (u.includes("car.info") || u.includes("biluppgifter"))) {
+        // User navigated away from login page = logged in
+        setTimeout(() => extractAndResolve("login-detected"), 2000);
+      }
+    }
+
+    loginWin.webContents.on("did-navigate", (_e, newUrl) => checkUrl(newUrl));
+    loginWin.webContents.on("did-navigate-in-page", (_e, newUrl) => checkUrl(newUrl));
+
+    // Also poll cookies every 5s to detect BankID login (may not trigger navigation)
+    let initialCookieCount = 0;
+    loginSession.cookies.get({}).then((c) => { initialCookieCount = c.length; }).catch(() => {});
+    const cookiePoll = setInterval(async () => {
+      if (resolved) { clearInterval(cookiePoll); return; }
+      try {
+        const siteDomain = site === "car.info" ? "car.info" : "biluppgifter";
+        const allCookies = await loginSession.cookies.get({});
+        const relevant = allCookies.filter((c) => c.domain.toLowerCase().includes(siteDomain));
+        // If we got new auth-looking cookies since page load, login probably succeeded
+        const hasAuthCookies = relevant.some((c) =>
+          c.name.includes("session") || c.name.includes("SESS") ||
+          c.name.includes("token") || c.name.includes("auth") ||
+          c.name.includes("laravel") || c.name.includes("member") ||
+          c.name.includes("_identity") || c.name.includes("logged")
+        );
+        if (hasAuthCookies && relevant.length > initialCookieCount) {
+          console.log(`[login-window] Cookie poll detected auth cookies for ${site}`);
+          clearInterval(cookiePoll);
+          setTimeout(() => extractAndResolve("cookie-poll-detected"), 2000);
+        }
+      } catch {}
+    }, 5000);
+
+    // If user closes window manually, extract whatever cookies exist
+    loginWin.on("closed", () => {
+      clearInterval(cookiePoll);
+      if (!resolved) {
+        resolved = true;
+        // Can't get cookies from closed window — resolve empty
+        // But the persist:partition keeps them for next time
+        loginSession.cookies.get({}).then((allCookies) => {
+          const siteDomain = site === "car.info" ? "car.info" : "biluppgifter";
+          const relevant = allCookies.filter((c) =>
+            c.domain.toLowerCase().includes(siteDomain)
+          );
+          const playwrightCookies = relevant.map((c) => ({
+            name: c.name,
+            value: c.value,
+            domain: c.domain,
+            path: c.path || "/",
+            httpOnly: !!c.httpOnly,
+            secure: !!c.secure,
+            sameSite: c.sameSite === "no_restriction" ? "None"
+                    : c.sameSite === "lax" ? "Lax"
+                    : c.sameSite === "strict" ? "Strict"
+                    : "Lax",
+            expires: c.expirationDate || -1,
+          }));
+          console.log(`[login-window] window-closed: Got ${playwrightCookies.length} cookies for ${site}`);
+          resolve({ success: playwrightCookies.length > 0, cookies: playwrightCookies });
+        }).catch(() => {
+          resolve({ success: false, cookies: [] });
+        });
+      }
+    });
+
+    // Timeout after 5 minutes
+    setTimeout(() => extractAndResolve("timeout"), TIMEOUT_MS);
+  });
+});
+
 // ─── Auto-update ────────────────────────────────────────────────────────────
 function setupAutoUpdater() {
   if (DEV_MODE) return;

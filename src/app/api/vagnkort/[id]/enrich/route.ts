@@ -27,6 +27,7 @@ const FUEL_MAP: Record<string, string> = {
 const JUNK_ENGINE_CODES = new Set([
   "logga in", "login", "visa", "dölj", "premium", "pro", "köp",
   "nedc", "wltp", "euro 5", "euro 6", "euro 4",
+  "okänt", "okänd", "okant", "okand", "unknown", "saknas", "missing", "n/a",
 ]);
 
 const ROUTE_JUNK_CODES =
@@ -50,11 +51,11 @@ function filterEngineCode(
   ) return null;
   if (/hämta|hamta|visa|logga|köp|dölj/i.test(trimmed)) return null;
 
-  if (model) {
+  if (model && model.length >= 4) {
     const normCode = trimmed.toLowerCase().replace(/[\s\-_.]/g, "");
     const normModel = model.toLowerCase().replace(/[\s\-_.]/g, "");
     if (normModel.includes(normCode) || normCode.includes(normModel)) return null;
-    const modelParts = model.split(/[\s\-_.]+/).filter((p) => p.length >= 3);
+    const modelParts = model.split(/[\s\-_.]+/).filter((p) => p.length >= 4);
     for (const part of modelParts) {
       if (part.toLowerCase() === normCode) return null;
     }

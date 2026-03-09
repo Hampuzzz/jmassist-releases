@@ -11,4 +11,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   // Auto-start with Windows
   getAutoStart: () => ipcRenderer.invoke("get-auto-start"),
   setAutoStart: (enabled) => ipcRenderer.invoke("set-auto-start", enabled),
+  // Open login window on user's PC (returns { success, cookies })
+  openLoginWindow: (url, site) => ipcRenderer.invoke("open-login-window", { url, site }),
 });

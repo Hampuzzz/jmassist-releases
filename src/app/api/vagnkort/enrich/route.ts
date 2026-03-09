@@ -335,9 +335,10 @@ export async function POST(request: NextRequest) {
                 updateFields.vin = data.vin;
                 dataFieldCount++;
               }
-              const JUNK_ENGINE_CODES = new Set(["logga in", "login", "visa", "dölj", "premium", "pro", "köp", "nedc", "wltp", "euro 5", "euro 6", "euro 4"]);
+              const JUNK_ENGINE_CODES = new Set(["logga in", "login", "visa", "dölj", "premium", "pro", "köp", "nedc", "wltp", "euro 5", "euro 6", "euro 4", "hämta", "hamta", "hämta motorkod", "hamta motorkod", "okänt", "okänd", "okant", "okand", "unknown", "saknas", "missing", "n/a"]);
               if (data.engine_code && typeof data.engine_code === "string" &&
-                  !JUNK_ENGINE_CODES.has(data.engine_code.toLowerCase().trim())) {
+                  !JUNK_ENGINE_CODES.has(data.engine_code.toLowerCase().trim()) &&
+                  !/^(hämta|hamta|visa|logga|köp|dölj)/i.test(data.engine_code.trim())) {
                 updateFields.engineCode = data.engine_code;
                 dataFieldCount++;
               }

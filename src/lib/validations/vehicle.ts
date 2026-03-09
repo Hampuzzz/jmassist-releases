@@ -11,6 +11,7 @@ export const createVehicleSchema = z.object({
   fuelType:     z.enum(["petrol", "diesel", "hybrid", "electric", "plug_in_hybrid", "ethanol", "lpg", "hydrogen", "other"]).optional().nullable(),
   engineSizeCc: z.number().int().positive().optional().nullable(),
   powerKw:      z.number().int().positive().optional().nullable(),
+  engineCode:   z.string().max(30).optional().nullable(),
   transmission: z.enum(["manual", "automatic"]).optional().nullable(),
   driveType:    z.enum(["fwd", "rwd", "awd"]).optional().nullable(),
   mileageKm:    z.number().int().nonnegative().optional().nullable(),

@@ -19,6 +19,16 @@ type BiluppgifterStatus = {
   cfClearanceExpiresAt: string | null;
 };
 
+/** Check if Electron API is available (running inside Electron) */
+function getElectronAPI(): {
+  openLoginWindow: (url: string, site: string) => Promise<{ success: boolean; cookies: any[]; userAgent?: string }>;
+} | null {
+  if (typeof window !== "undefined" && (window as any).electronAPI?.openLoginWindow) {
+    return (window as any).electronAPI;
+  }
+  return null;
+}
+
 /**
  * EnrichStatus — shown on the Vagnkort page.
  * Connects to the global EnrichmentProvider context.
@@ -64,33 +74,64 @@ export function EnrichStatus() {
     setLoginLoading(true);
     setLoginMsg("");
     try {
-      const res = await fetch("/api/vagnkort/carinfo-login", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        setLoginMsg("Webbläsare öppnad — logga in på car.info manuellt!");
-        // Poll status every 10s to detect successful login
-        const poll = setInterval(async () => {
-          try {
-            const statusRes = await fetch("/api/vagnkort/carinfo-login");
-            if (statusRes.ok) {
-              const status = await statusRes.json();
-              setCarInfo(status);
-              if (status.hasCookies && !status.blocked) {
-                setLoginMsg("Inloggad på car.info!");
-                setLoginLoading(false);
-                clearInterval(poll);
-              }
-            }
-          } catch {}
-        }, 10_000);
-        // Stop polling after 5 min
-        setTimeout(() => {
-          clearInterval(poll);
-          setLoginLoading(false);
-        }, 300_000);
-      } else {
-        setLoginMsg(data.error ?? "Kunde inte starta inloggning");
+      const electron = getElectronAPI();
+      if (electron) {
+        // ── Electron: open login window locally on user's PC ──
+        setLoginMsg("Öppnar inloggningsfönster...");
+        const result = await electron.openLoginWindow(
+          "https://www.car.info/sv-se/user/login",
+          "car.info"
+        );
+        if (result.success && result.cookies.length > 0) {
+          setLoginMsg("Skickar cookies till servern...");
+          // Forward cookies to MagicNUC via API
+          const res = await fetch("/api/vagnkort/carinfo-login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cookies: result.cookies }),
+          });
+          if (res.ok) {
+            setLoginMsg("Inloggad på car.info!");
+            // Update local status immediately (MagicNUC status may lag)
+            setCarInfo((prev) => prev ? {
+              ...prev,
+              hasCookies: true,
+              blocked: false,
+              cookieAgeHours: 0,
+            } : prev);
+          } else {
+            const data = await res.json();
+            setLoginMsg(data.error ?? "Kunde inte skicka cookies till servern");
+          }
+        } else {
+          setLoginMsg("Inloggning avbruten eller misslyckades");
+        }
         setLoginLoading(false);
+      } else {
+        // ── Fallback: trigger remote Playwright on MagicNUC ──
+        const res = await fetch("/api/vagnkort/carinfo-login", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          setLoginMsg("Webbläsare öppnad på servern — logga in där!");
+          const poll = setInterval(async () => {
+            try {
+              const statusRes = await fetch("/api/vagnkort/carinfo-login");
+              if (statusRes.ok) {
+                const status = await statusRes.json();
+                setCarInfo(status);
+                if (status.hasCookies && !status.blocked) {
+                  setLoginMsg("Inloggad på car.info!");
+                  setLoginLoading(false);
+                  clearInterval(poll);
+                }
+              }
+            } catch {}
+          }, 10_000);
+          setTimeout(() => { clearInterval(poll); setLoginLoading(false); }, 300_000);
+        } else {
+          setLoginMsg(data.error ?? "Kunde inte starta inloggning");
+          setLoginLoading(false);
+        }
       }
     } catch {
       setLoginMsg("Nätverksfel — kör lookup-tjänsten?");
@@ -281,18 +322,22 @@ function CarInfoBar({
             )}
           </div>
         </div>
-        {!serviceDown && (!isOk || isBlocked) && (
+        {!serviceDown && (
           <button
             onClick={onLogin}
             disabled={loginLoading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900/30 hover:bg-blue-900/50 border border-blue-800 text-blue-300 rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0"
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0 ${
+              isOk
+                ? "bg-workshop-elevated hover:bg-workshop-border border border-workshop-border text-workshop-muted"
+                : "bg-blue-900/30 hover:bg-blue-900/50 border border-blue-800 text-blue-300"
+            }`}
           >
             {loginLoading ? (
               <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
               <KeyRound className="h-3 w-3" />
             )}
-            {loginLoading ? "Väntar..." : "Logga in car.info"}
+            {loginLoading ? "Väntar..." : isOk ? "Logga in igen" : "Logga in car.info"}
           </button>
         )}
       </div>
@@ -322,29 +367,64 @@ function BiluppgifterBar({ status }: { status: BiluppgifterStatus | null }) {
     setLoading(true);
     setMsg("");
     try {
-      const res = await fetch("/api/vagnkort/biluppgifter-login", { method: "POST" });
-      const data = await res.json();
-      if (res.ok) {
-        setMsg("Webbläsare öppnad — logga in med BankID i fönstret på servern (MagicNUC)");
-        // Poll status every 10s
-        const poll = setInterval(async () => {
-          try {
-            const statusRes = await fetch("/api/vagnkort/biluppgifter-login");
-            if (statusRes.ok) {
-              const s = await statusRes.json();
-              setLocalStatus(s);
-              if (s.hasCookies && s.cfClearanceValid) {
-                setMsg("Inloggad på biluppgifter.se!");
-                setLoading(false);
-                clearInterval(poll);
-              }
-            }
-          } catch {}
-        }, 10_000);
-        setTimeout(() => { clearInterval(poll); setLoading(false); }, 300_000);
-      } else {
-        setMsg(data.error ?? "Kunde inte starta inloggning");
+      const electron = getElectronAPI();
+      if (electron) {
+        // ── Electron: open login window locally on user's PC ──
+        setMsg("Öppnar inloggningsfönster...");
+        const result = await electron.openLoginWindow(
+          "https://biluppgifter.se/medlem/logga-in/",
+          "biluppgifter"
+        );
+        if (result.success && result.cookies.length > 0) {
+          setMsg("Skickar cookies till servern...");
+          // Forward cookies + user-agent to MagicNUC via API
+          const res = await fetch("/api/vagnkort/biluppgifter-login", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cookies: result.cookies, userAgent: result.userAgent }),
+          });
+          if (res.ok) {
+            setMsg("Inloggad på biluppgifter.se!");
+            // Update local status immediately (MagicNUC status may lag)
+            setLocalStatus({
+              hasCookies: true,
+              cookieAgeHours: 0,
+              cfClearanceValid: true,
+              cfClearanceExpiresAt: null,
+            });
+          } else {
+            const data = await res.json();
+            setMsg(data.error ?? "Kunde inte skicka cookies till servern");
+          }
+        } else {
+          setMsg("Inloggning avbruten eller misslyckades");
+        }
         setLoading(false);
+      } else {
+        // ── Fallback: trigger remote Playwright on MagicNUC ──
+        const res = await fetch("/api/vagnkort/biluppgifter-login", { method: "POST" });
+        const data = await res.json();
+        if (res.ok) {
+          setMsg("Webbläsare öppnad på servern — logga in med BankID där!");
+          const poll = setInterval(async () => {
+            try {
+              const statusRes = await fetch("/api/vagnkort/biluppgifter-login");
+              if (statusRes.ok) {
+                const s = await statusRes.json();
+                setLocalStatus(s);
+                if (s.hasCookies && s.cfClearanceValid) {
+                  setMsg("Inloggad på biluppgifter.se!");
+                  setLoading(false);
+                  clearInterval(poll);
+                }
+              }
+            } catch {}
+          }, 10_000);
+          setTimeout(() => { clearInterval(poll); setLoading(false); }, 300_000);
+        } else {
+          setMsg(data.error ?? "Kunde inte starta inloggning");
+          setLoading(false);
+        }
       }
     } catch {
       setMsg("Nätverksfel — kör lookup-tjänsten?");
@@ -377,20 +457,22 @@ function BiluppgifterBar({ status }: { status: BiluppgifterStatus | null }) {
             )}
           </div>
         </div>
-        {!isOk && (
-          <button
-            onClick={handleLogin}
-            disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-900/30 hover:bg-blue-900/50 border border-blue-800 text-blue-300 rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0"
-          >
-            {loading ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <KeyRound className="h-3 w-3" />
-            )}
-            {loading ? "Väntar på BankID..." : "Logga in (BankID)"}
-          </button>
-        )}
+        <button
+          onClick={handleLogin}
+          disabled={loading}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors disabled:opacity-50 flex-shrink-0 ${
+            isOk
+              ? "bg-workshop-elevated hover:bg-workshop-border border border-workshop-border text-workshop-muted"
+              : "bg-blue-900/30 hover:bg-blue-900/50 border border-blue-800 text-blue-300"
+          }`}
+        >
+          {loading ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <KeyRound className="h-3 w-3" />
+          )}
+          {loading ? "Väntar på BankID..." : isOk ? "Logga in igen" : "Logga in (BankID)"}
+        </button>
       </div>
     </div>
   );
